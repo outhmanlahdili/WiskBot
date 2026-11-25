@@ -1,0 +1,58 @@
+# Dependencies
+node_modules/
+.pnpm-store/
+
+# Build output
+out/
+dist/
+build/
+release/
+*.tsbuildinfo
+
+# Local secrets and credentials
+.env
+.env.*
+!.env.example
+keys.enc
+*.pem
+*.key
+*.pfx
+*.p12
+id_rsa*
+credentials*.json
+service-account*.json
+
+# Local application data
+wiskbot.db
+wiskbot.db-*
+*.sqlite
+*.sqlite-shm
+*.sqlite-wal
+
+# Logs and temp files
+*.log
+logs/
+tmp/
+temp/
+.cache/
+
+# Test and coverage
+coverage/
+playwright-report/
+test-results/
+blob-report/
+
+# Caches
+.eslintcache
+.parcel-cache/
+.turbo/
+
+# Editor / OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Playwright browser downloads
+ms-playwright/

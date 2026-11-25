@@ -1,0 +1,52 @@
+# Architectural decisions
+
+Owner: Session 1 · Last updated: 2026-11-25
+
+Status legend: **accepted** (implement as written) · **proposed** (needs validation in the named phase) · **under review** (research done, awaiting user decision) · **revisit** (trigger condition defined).
+
+| ID | Decision | Status | Evidence / rationale | Revisit when |
+| --- | --- | --- | --- | --- |
+| ADR-001 | Electron + electron-vite + React + TypeScript | accepted | Windows-first desktop needs local filesystem and OS integration; electron-vite has a maintained `react-ts` template | Bundle size becomes a top user complaint; then evaluate Tauri |
+| ADR-002 | Agent loop lives in Electron main process; renderer only sends intents | accepted | Least exposure for keys and tools; matches Electron security guidance | Never for convenience |
+| ADR-003 | No local HTTP server; stream agent events over typed IPC | accepted | A desktop app does not need a web server; `useChat` assumes HTTP routes | Only if we add a remote companion client, and then behind auth |
+| ADR-004 | Vercel AI SDK 7 as the single provider abstraction | accepted | Official provider list, tool approval, loop control, compaction; pin version | A blocker in tool approval or provider coverage appears in Phase 1/2 |
+| ADR-005 | BYOK keys encrypted with `safeStorage` async API | accepted | DPAPI on Windows; sync API deprecated for removal in Electron 46 | Linux support needs backend detection (`basic_text` is unsafe) |
+| ADR-006 | SQLite via `better-sqlite3` + Drizzle, rebuilt with `@electron/rebuild` | accepted | Mature driver, typed schema, local file; ABI mismatch is a known solved problem | `node:sqlite` becomes stable inside our Electron version |
+| ADR-007 | Browser automation via Playwright in a utility process | accepted | Deterministic, isolated contexts; safer than pixel-based control | Never flip to using the user's real browser profile by default |
+| ADR-008 | Windows UI Automation, not raw pixel clicking, for desktop control | proposed for Phase 5 | Official accessibility framework; more reliable than screenshots | Only for apps with no accessibility tree, and only with explicit approval |
+| ADR-009 | PermissionEngine is the single policy enforcement point | accepted | OWASP ASI02 recommends least privilege, action-level approval, egress allowlists, immutable logs | Never bypass it from a skill or MCP server |
+| ADR-010 | MCP is a Phase 6 optional integration, not a core dependency | accepted | Open standard with broad support, but tool descriptions are untrusted input | Earlier only if a required integration is MCP-only |
+| ADR-011 | No hard-coded list of free models | accepted | Free tiers and model ids change; fetch model metadata from provider | Never |
+| ADR-012 | No arbitrary shell/PowerShell tool in MVP | accepted | OWASP ASI05; no real sandbox boundary yet | Only after a genuine isolated execution environment is implemented |
+| ADR-013 | i18n key catalogs en/fr/ar with RTL from day one | accepted | Morocco first, global design; retrofitting RTL is expensive | Never |
+| ADR-014 | Repository licence: **Apache-2.0** | **accepted by user 2026-11-25** | Express patent grant (§3), permissive, OSI-approved, fits BYOK/local-first goals. `LICENSE` and `NOTICE` are to be created by Session 2 in Phase 1 — **not created yet** | Only if the user explicitly changes direction before the first release |
+| ADR-015 | Skills are Markdown instructions + JSON manifest in Phase 4 | proposed | Keeps skills reviewable and avoids arbitrary code execution | Allow code skills only after a sandbox exists |
+| ADR-016 | Muse is a model family/BYOK provider, not a desktop product to clone | accepted | Verified Meta Model API docs and AI SDK provider page (2026-11-25); see RESEARCH.md | If Meta publishes a Muse desktop app, revisit product framing |
+| ADR-018 | Include Meta Model API as a BYOK provider from Phase 1 | accepted | `https://api.meta.ai/v1`, `MODEL_API_KEY`, OpenAI-compatible adapters; fits BYOK model exactly | If regional availability blocks target users, keep it but de-emphasise in onboarding |
+| ADR-019 | Use driver-owned automation, not Meta's native `computer` tool, in MVP | accepted | Native tool only on Responses API; AI SDK support unverified; our driver keeps provider independence | Phase 5 may add a direct Responses API adapter after verification |
+| ADR-020 | Never auto-acknowledge provider safety checks | accepted | Meta computer-use docs require explicit review; OWASP ASI02 requires action-level approval | Never |
+| ADR-021 | GitHub public repo, git history as rollback between sessions | accepted | git installed locally; public repos get free Actions runners, secret scanning, Dependabot, CodeQL; see PRELAUNCH.md | Never |
+| ADR-022 | SignPath Foundation free OSS signing first; EV/cloud signing later | proposed for Phase 7 | Morocco-based individual is not eligible for Azure Artifact Signing Public Trust; SignPath requires an OSI-approved licence; SmartScreen effect unverified | If SignPath rejects the project or warnings persist, budget for an EV/cloud certificate |
+| ADR-023 | Fully open-source strategy is the right fit | accepted | Inspectability is a trust feature for a BYOK app with desktop control; no subscription to protect; aligns with global adoption and OSS signing. See RESEARCH.md | If the user decides to protect a commercial offering with closed code, revisit the whole product definition |
+| ADR-024 | Permissive licensing over copyleft for the core | accepted with Apache-2.0 | Comparable desktop/AI tools use MIT or Apache-2.0; GPLv3 does not keep prices at zero and adds distribution complexity; AGPL's network clause does not fit a local-first app; source-available licences are not OSI and block SignPath | If a hosted network service is added, revisit AGPL/GPL |
+| ADR-025 | DCO 1.1 sign-off for contributions; **no CLA** (user-approved) | accepted | Lightweight; projects like LangChain enforce it. Trade-off accepted: future proprietary relicensing would need every contributor's agreement | If commercial dual licensing becomes a goal, add a CLA before accepting more contributions |
+| ADR-026 | Private vulnerability reporting + `SECURITY.md`; no public security issues | accepted | GitHub private reporting is free for public repos and supports structured PoC/impact forms; Open Source Guides carve out security as an exception to public-by-default | Never |
+| ADR-027 | Contributor Covenant 2.1 + `CONTRIBUTING.md` + `GOVERNANCE.md` | accepted | User approved Covenant 2.1; Open Source Guides list these as launch essentials; governance names the tiebreaker before conflict arises | Replace BDFL tiebreaker with a committee/foundation when a maintainer group forms |
+| ADR-028 | Dependency hygiene: lockfile, `npm audit`, Dependabot, SBOM/notices | accepted | GitHub free security tooling plus Apache-2.0 `NOTICE` obligations; supply chain is a top agentic risk (OWASP ASI04) | Never |
+| ADR-029 | Create `TRADEMARKS.md` now | accepted | Copyright licences do not grant name/logo rights; Apache-2.0 §6 explicitly excludes trademark use | Never |
+| ADR-030 | Sustainability: donations/services around a free core, never user data | accepted | GitHub Sponsors; Nabu Casa model of optional paid services funding a foundation; contradicts neither BYOK nor local-first | Revisit only if users explicitly ask for a hosted option with opt-in privacy guarantees |
+| ADR-031 | Copyright notice wording: `Copyright 2026 WiskBot contributors` | accepted | Avoids publishing a personal legal name; sufficient as a notice; covers future contributors. User's legal name/email must not be published without explicit approval | User may substitute their own name/handle before first release; if copyright registration is desired, handle separately |
+| ADR-032 | No personal identifiers in public docs; security via GitHub private reporting | accepted | CoC enforcement contact remains a placeholder until user supplies a dedicated address; `SECURITY.md` routes to GitHub private vulnerability reporting | Only when user explicitly approves publishing a contact address |
+| ADR-033 | Security response times are **targets**, not guarantees | accepted | User-approved: acknowledge within 7 days, target fix within 30 days for confirmed high-severity issues; must be worded as targets in `SECURITY.md` | Never |
+| ADR-017 | Telemetry disabled by default; no user-data upload | accepted | Local-first and privacy promises | Only with opt-in and a documented policy |
+
+## Security decisions that must not be relaxed silently
+
+- `contextIsolation: true`, `sandbox: true`, `nodeIntegration: false`, restrictive CSP.
+- Validate `event.senderFrame` on every IPC handler.
+- Custom protocol instead of `file://` for app assets.
+- No raw `ipcRenderer` or Electron APIs exposed through `contextBridge`.
+- Keys never leave the main process; renderer sees only booleans and masked hints.
+- Tool arguments are re-validated against resolved targets inside `execute`.
+- Denied tool calls are not retried automatically.
+- No model output is ever passed to a shell or `eval`.
