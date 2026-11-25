@@ -12,7 +12,7 @@ This folder is the shared source of truth for the two-session workflow.
 | [TOOL-CATALOG.md](TOOL-CATALOG.md) | Agent tools, risk levels, approval rules |
 | [ROADMAP.md](ROADMAP.md) | Development phases and exit criteria |
 | [DECISIONS.md](DECISIONS.md) | Architectural decision records |
-| [PROMPTS/](PROMPTS/) | Implementation prompts handed to Session 2 (`01-foundation`, `01b-preload-fix-and-smoke-test`) |
+| [PROMPTS/](PROMPTS/) | Implementation prompts handed to Session 2 (`01-foundation`, `01b-preload-fix-and-smoke-test`, `02-safe-agent-loop`) |
 
 ## Rules for both sessions
 

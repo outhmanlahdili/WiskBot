@@ -12,20 +12,21 @@ Each phase ends with a report from Session 2 to Session 1. Do not start the next
 
 **Exit:** this documentation set exists and the handoff prompt is in `docs/PROMPTS/`.
 
-## Phase 1 — Foundation and secure shell (first Session 2 task)
+## Phase 1 — Foundation and secure shell (COMPLETE 2026-11-25)
 
-- [ ] Scaffold electron-vite `react-ts` project with strict TypeScript
-- [ ] Tailwind + shadcn/ui base layout: chat shell, settings, sidebar
-- [ ] Secure window setup: `contextIsolation`, sandbox, no `nodeIntegration`, CSP, navigation/window restrictions, custom protocol, IPC sender validation
-- [ ] Typed IPC bridge via `contextBridge` with Zod-validated payloads
-- [ ] SQLite + Drizzle schema and migrations with `@electron/rebuild`
-- [ ] `safeStorage` async secure key store; settings and provider registry; one provider connection test
-- [ ] i18n scaffolding with en/fr/ar catalogs and RTL support
-- [ ] Vitest unit tests for config validation, redaction, IPC schema; README + **Apache-2.0** `LICENSE` + `NOTICE` + community files + `.gitignore` (corrected 2026-11-25; earlier text said MIT)
+- [x] Scaffold electron-vite `react-ts` project with strict TypeScript
+- [x] Tailwind + shadcn/ui base layout: chat shell, settings, sidebar
+- [x] Secure window setup: `contextIsolation`, sandbox, no `nodeIntegration`, CSP, navigation/window restrictions, custom protocol, IPC sender validation
+- [x] Typed IPC bridge via `contextBridge` with Zod-validated payloads
+- [x] SQLite + Drizzle schema and migrations with `@electron/rebuild`
+- [x] `safeStorage` async secure key store; settings and provider registry; one provider connection test
+- [x] i18n scaffolding with en/fr/ar catalogs and RTL support
+- [x] Vitest unit tests for config validation, redaction, IPC schema; README + **Apache-2.0** `LICENSE` + `NOTICE` + community files + `.gitignore`
+- [x] **Phase 1b:** preload emitted as CJS with bundled deps under `sandbox: true`; GUI smoke test passed with console/screenshot evidence
 
-**Exit criteria:** app launches on Windows; no security warnings in console; settings can save a key and a connection test works (or fails legibly) without exposing the key; database file created with migrations applied; `npm test` passes; `npm run build` succeeds.
+**Exit criteria met:** app launched on Windows with no security warnings; provider key saved/redacted and connection test returned a legible error; database and keys file created; en/fr/ar + RTL verified; `npm test` / `typecheck` / `build` all pass. Evidence: Phase 1b report plus screenshots in the temp folder.
 
-**Report back:** installed versions, file list, any deviation from docs, screenshots/log excerpts, known bugs, and questions.
+**Accepted follow-ups (not Phase 1 blockers):** Electron binary may need `node node_modules/electron/install.js` on fresh installs; only one provider was live-tested; `keys.enc` decryption failure has no in-app recovery yet; provider metadata is duplicated between main and renderer; renderer bundle ~843 kB and 10 moderate npm audit findings are Phase 7 items.
 
 ## Phase 2 — Safe agent loop
 

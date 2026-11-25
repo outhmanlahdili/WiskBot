@@ -42,6 +42,8 @@ Status legend: **accepted** (implement as written) · **proposed** (needs valida
 | ADR-035 | Preload must be CJS with bundled deps under `sandbox: true` | accepted (bug found in Phase 1 review) | Electron docs: sandboxed preload cannot use ESM imports; `require` only loads `electron`. `out/preload/index.mjs` contains ESM imports and an external `zod` import → will fail. Fix via `preload.build.lib.formats: ['cjs']` + `externalizeDeps: false`; never disable sandbox | If Electron adds supported sandboxed ESM preload, revisit |
 | ADR-036 | Add `@ai-sdk/anthropic` and `@ai-sdk/google` adapters | accepted | Native adapters required for connection tests; not OpenAI-compatible; verified SDK provider list | Never |
 | ADR-037 | `app.deleteLocalData` IPC channel is in scope | accepted | Required by the mandated "Delete all local data" settings action; must be destructive-only, confirmed in UI, and audited | Never |
+| ADR-038 | Phase 1 accepted after 01b verification | accepted | CJS self-contained preload under sandbox; GUI smoke test passed with no security warnings; IPC round-trips, key redaction, DB migrations and RTL verified; all checks pass | Only if new evidence contradicts the smoke test |
+| ADR-039 | Provider metadata must have one source of truth in Phase 2 | accepted | Duplication between main `definitions.ts` and renderer `SettingsView.tsx` is a drift risk; expose definitions through IPC and have the renderer consume them | Never |
 | ADR-017 | Telemetry disabled by default; no user-data upload | accepted | Local-first and privacy promises | Only with opt-in and a documented policy |
 
 ## Security decisions that must not be relaxed silently
