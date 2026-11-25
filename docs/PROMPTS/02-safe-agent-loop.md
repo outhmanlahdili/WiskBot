@@ -20,12 +20,15 @@ Now implement **Phase 2 only**. Read first:
 
 Do not modify `docs/`. Do not start Phase 3. Do not push to GitHub yet.
 
+Also clean up the two leftover smoke-harness artifacts from Phase 1b (`preview/`, `vite.preview.config.ts`) — delete them or add them to `.gitignore`. No secrets were found in them.
+
 ## Your task
 
 ### 1. Agent loop in the main process
 
 - Use AI SDK `ToolLoopAgent` with the model resolved from the selected provider (reuse `src/main/providers/registry.ts`).
-- Stream every step to the renderer through the existing `chat.event` IPC channel — **no local HTTP server**, no `useChat`.
+- Consume the agent's stream parts directly and map each part to an IPC event. Do **not** use `useChat`, `createAgentUIStreamResponse`, or any local HTTP server — the renderer has no HTTP surface.
+- Stream every step to the renderer through the existing `chat.event` IPC channel.
 - Events to emit (extend the shared event union in `src/shared/ipc.ts` with Zod schemas):
   `text-delta`, `tool-call`, `tool-result`, `tool-error`, `approval-request`, `approval-response`, `usage`, `done`, `error`.
 - Persist user messages, assistant text, tool calls, tool results and approval decisions into SQLite (`messages`, `tool_calls`, `approvals`).
@@ -33,16 +36,18 @@ Do not modify `docs/`. Do not start Phase 3. Do not push to GitHub yet.
 
 ### 2. Approval flow (the critical part)
 
-Per AI SDK docs, manual approval is a **two-call flow**:
+Verified from <https://ai-sdk.dev/docs/agents/tool-approvals>. Manual approval is a **two-call flow**:
 
-1. Configure `toolApproval` in one place (e.g. `{ readFile: 'user-approval' }` or a policy function).
-2. The first `agent.stream()` call ends with `tool-approval-request` parts. Do **not** execute the tool in that call.
+1. Configure `toolApproval` in one place — a per-tool map or a generic policy function that calls `PermissionEngine` and can return `'user-approval'`, `'denied'` (with reason), `'approved'`, or `undefined` (= `'not-applicable'`). Use the deprecated `needsApproval` property nowhere.
+2. The first `agent.stream()` call ends with `tool-approval-request` parts. Do **not** execute the tool in that call. Only respond to parts where `isAutomatic` is false.
 3. Renderer shows a dialog: tool name, target, and a preview/diff.
-4. User chooses **Allow once**, **Allow for this session**, or **Deny**. `allow-always` only for low-risk tools inside an allowlisted scope.
-5. Main adds a `tool-approval-response` to the message list and calls the model again. Only then does `execute` run.
-6. On denial, return a clear denial result and include a system instruction telling the model **not to retry the denied call**.
+4. User chooses **Allow once**, **Allow for this session**, or **Deny**. `allow-always` only for low-risk tools inside an allowlisted scope. Session grants live in a per-conversation in-memory map in main with a clear expiry.
+5. Keep conversation state as `ModelMessage[]` in main. After the first call, append `result.responseMessages`, then push a `{ role: 'tool', content: [ToolApprovalResponse] }` message with the matching `approvalId`, then call the agent again. Only then does `execute` run.
+6. **Preserve `inputSchemaInput`** on approval requests when persisting messages — the SDK uses it to revalidate that the approved input was not changed.
+7. Generate a random secret at startup (at least 32 bytes, in memory only, never persisted or sent to the renderer) and pass it as `experimental_toolApprovalSecret` so approvals are HMAC-signed and cannot be forged by a crafted IPC message.
+8. On denial, return a clear denial result and include a system instruction telling the model **not to retry the denied call**.
 
-Every decision is written to `audit_events` with redacted arguments. `PermissionEngine` re-checks the *resolved* target inside `execute` (absolute path, final URL), not just the raw model input.
+Every decision is written to `audit_events` with redacted arguments. `PermissionEngine` re-checks the *resolved* target inside `execute` (absolute path, final URL), not just the raw model input. Automatic approvals/denials are recorded but must not appear as manual dialogs.
 
 ### 3. Tools allowed in Phase 2 (no others)
 
@@ -54,11 +59,12 @@ Fully qualified names. Zod `inputSchema`. `execute` only in main. No write tools
 
 ### 4. Loop control and context
 
-- `stopWhen: isStepCount(12)` plus a configurable token/cost budget; stop cleanly when exceeded.
+- `stopWhen: isStepCount(12)` plus a configurable token/cost budget; enforce the budget by watching `usage` events and aborting the run when exceeded.
 - `activeTools` filtered by the conversation's granted scopes.
 - `prepareStep` + `pruneMessages` for compaction when token estimates cross a threshold.
-- One `AbortController` per run; `chat.cancel` aborts the model call and all tool calls.
+- One `AbortController` per run; **replace the current `chat.cancel` and `chat.respondApproval` stubs** with real handlers. The signal must reach the model call and every tool `execute`.
 - `toolCallConcurrency: 1` for deterministic tool ordering.
+- On a fresh install where the Electron binary is missing, document/run `node node_modules/electron/install.js` before the smoke test.
 
 ### 5. Fix the two accepted follow-ups
 
@@ -68,7 +74,7 @@ Fully qualified names. Zod `inputSchema`. `execute` only in main. No write tools
 ### 6. Testing (must be deterministic)
 
 - Add a **fake provider** (in-process, deterministic scripted responses) so no real API key or network is needed.
-- Tests must cover: approval request → approve → tool executes; approval request → deny → no retry; cancellation; step budget; path allowlist canonicalisation (`..`, absolute escape, look-alike domains); redaction; audit records.
+- Tests must cover: approval request → approve → tool executes; approval request → deny → no retry; **forged/tampered approval response is rejected**; `inputSchemaInput` survives persistence; cancellation; step budget; path allowlist canonicalisation (`..`, absolute escape, look-alike domains); redaction; audit records.
 - Integration test with a temporary SQLite database — never the real `%APPDATA%\WiskBot` profile.
 - Run `npm test`, `npm run typecheck`, `npm run build`. All pass.
 
