@@ -1,0 +1,15 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'self' wiskbot:; script-src 'self' wiskbot:; style-src 'self' 'unsafe-inline' wiskbot:; img-src 'self' wiskbot: data:; connect-src 'self' wiskbot: ws: http://localhost:*; font-src 'self' wiskbot: data:; object-src 'none'; base-uri 'none'; form-action 'none'"
+    />
+    <title>WiskBot</title>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>

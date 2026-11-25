@@ -1,0 +1,55 @@
+name: Bug report
+description: Report a problem with WiskBot
+title: "[Bug]: "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to report a bug. Please do not include API keys, tokens, personal data, or the contents of `%APPDATA%\WiskBot\` files. For security vulnerabilities, use private vulnerability reporting instead of a public issue.
+
+  - type: textarea
+    id: description
+    attributes:
+      label: Description
+      description: What happened? What did you expect to happen?
+    validations:
+      required: true
+
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      description: List the steps to reproduce the problem.
+      placeholder: |
+        1. ...
+        2. ...
+        3. ...
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected_actual
+    attributes:
+      label: Expected vs actual behaviour
+      description: Describe what you expected and what actually happened.
+    validations:
+      required: true
+
+  - type: input
+    id: version_os
+    attributes:
+      label: Version and OS
+      description: WiskBot version and Windows version.
+      placeholder: "WiskBot 0.x.x, Windows 11"
+    validations:
+      required: true
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs
+      description: Any relevant logs or error messages. Please redact API keys, tokens, and other sensitive data before pasting.
+      render: shell
+    validations:
+      required: false
