@@ -1,8 +1,8 @@
 # Development roadmap
 
-Owner: Session 1 · Status: proposed · Last updated: 2026-11-25
+Owner: Session 1 · Status: active · Last updated: 2026-11-26
 
-Each phase ends with a report from Session 2 to Session 1. Do not start the next phase until the previous one is reviewed.
+**One phase at a time.** Session 2 receives exactly one prompt, implements only that phase, and reports back. No skipping ahead, no "while I'm here" extras. Each phase ends with a report from Session 2 to Session 1; the next phase prompt is written only after review. This keeps a solo developer's project practical and beginner-friendly.
 
 ## Phase 0 — Research and architecture (Session 1, complete)
 
@@ -33,37 +33,45 @@ Each phase ends with a report from Session 2 to Session 1. Do not start the next
 - [ ] `ToolLoopAgent` with streaming events over IPC
 - [ ] Conversation persistence and message rendering with tool events
 - [ ] `PermissionEngine` + approval UI using the AI SDK two-call approval flow
-- [ ] Time tool and low-risk filesystem read/list tools with allowlisted roots
+- [ ] Approval card shows tool name, resolved target, scope and concrete values; chat-initiated cards wait indefinitely
+- [ ] Time tool and low-risk filesystem read/list tools with allowlisted roots; reading WiskBot's own memory/skill folders never prompts
+- [ ] Signed approval secret (`experimental_toolApprovalSecret`) so forged IPC approvals are rejected
+- [ ] Fix provider metadata duplication and add `keys.enc` reset recovery
 - [ ] Audit log viewer; cancellation; budgets and step limits
 - [ ] Context compaction via `prepareStep` / `pruneMessages`
 
-**Exit:** a user can chat, approve a read-only tool, see the tool result, deny a tool without retry, cancel a run, and inspect the audit log. Tests cover permission decisions and denial handling.
+**Exit:** a user can chat, approve a read-only tool, see the tool result, deny a tool without retry, cancel a run, and inspect the audit log. No key or full tool output appears in logs. Tests cover permission decisions, denial handling and forged approvals. Handoff: `docs/PROMPTS/02-safe-agent-loop.md`.
 
 ## Phase 3 — Browser automation
 
 - [ ] BrowserWorker utility process with Playwright and a dedicated persistent profile
 - [ ] Domain allowlist and per-domain approval
 - [ ] `open`, `snapshot`, `click`, `type`, `screenshot` tools
-- [ ] Treat all page content as untrusted; never execute page JavaScript as trusted input
-- [ ] Visible "managed browser" indicator and activity log
+- [ ] Prefer a structured tool over clicking when one exists; treat all page content as untrusted; never execute page JavaScript as trusted input
+- [ ] Human takeover path for sign-in / CAPTCHA / 2FA, with credentials typed by the app and never shown to the model
+- [ ] Visible "managed browser" indicator, step-by-step activity log and immediate stop control
 
-**Exit:** a user can ask the assistant to perform a multi-step task on an allowlisted site, with approvals, and inspect what happened. No use of the user's real logged-in browser profile.
+**Exit:** a user can ask the assistant to perform a multi-step task on an allowlisted site, with approvals, take over for a sensitive step, and inspect what happened. No use of the user's real logged-in browser profile. Prompt to be written when Phase 2 is accepted.
 
 ## Phase 4 — Memory, preferences, skills
 
 - [ ] Explicit memory save/recall with user-visible context injection
+- [ ] Memory stored as an index plus topic files; index injected, entries read on demand
+- [ ] Imported/project memory treated as untrusted prompt input and labelled in the UI
 - [ ] Preference settings (language, tone, autonomy level)
 - [ ] Local skill manifest format, validation, enable/disable, and one built-in example skill
+- [ ] Skills may be taught by demonstration later; in Phase 4 they are Markdown + manifest only
 - [ ] Skill permission declarations and first-use approval
 
-**Exit:** memories and skills survive restart; user can inspect, edit, and delete them; injected context is visible in the UI.
+**Exit:** memories and skills survive restart; user can inspect, edit, and delete them; injected context is visible in the UI and imported memory is marked untrusted. Prompt to be written when Phase 3 is accepted.
 
 ## Phase 5 — Windows computer use
 
 - [ ] DesktopWorker utility process with a UI Automation adapter
 - [ ] Window allowlist, element-tree reading, invoke/click/type with highlight
-- [ ] Screenshot capture with visible indicator
-- [ ] Explicit approval for every action; no shell fallback
+- [ ] Screenshot capture with visible indicator, element highlight before click, and human takeover for sign-in/CAPTCHA
+- [ ] Immediate hard-stop control; explicit approval for every action; no shell fallback
+- [ ] Read accessibility tree before clicking pixels; never place a secret into typed text
 - [ ] Evaluate (do not assume) Meta's native `computer` tool on the Responses API as an optional provider-specific path; AI SDK support is unverified, so the driver-owned design remains the default
 
 **Exit:** a repeatable, low-risk desktop task (e.g. reading a window's text and clicking a known button in an allowlisted app) succeeds with approval and produces a full audit trail. Reliability limitations are documented in-product.
@@ -77,6 +85,8 @@ Each phase ends with a report from Session 2 to Session 1. Do not start the next
 - [ ] Visible "WiskBot is keeping this PC awake" indicator; setting to disable it; battery-friendly by default (never hold the blocker indefinitely)
 - [ ] Queue tasks while offline and resume when online; prefer local models (Ollama) for offline runs
 - [ ] Optional "start WiskBot at login" setting
+- [ ] Routine safety: test runs that send/buy nothing; explicit no-data and stale-data policy; catch-up window; rate limits; run history with success/failure reasons
+- [ ] Plain-code checks run before any AI turn so quiet ticks cost nothing (pattern from DuskBot)
 - [ ] Document the hard limit: **a fully sleeping PC cannot run anything.** Waking it requires Windows OS configuration (wake timers via `powercfg /waketimers`, device wake via `powercfg /deviceenableawake`, or Wake-on-LAN), not an AI model feature. Source: <https://learn.microsoft.com/en-us/windows-hardware/design/device-experiences/powercfg-command-line-options>. Muse/Grok/GPT decide actions; the app and OS control execution and power state.
 
 **Exit:** a scheduled task runs and can be cancelled; an MCP server can be added and its tools are gated by permissions; keep-awake is opt-in with a visible indicator and stops when the task ends.
@@ -84,7 +94,9 @@ Each phase ends with a report from Session 2 to Session 1. Do not start the next
 ## Phase 7 — Hardening and distribution
 
 - [ ] Dependency audit (npm audit), Electron fuses, code-signing path, NSIS installer
+- [ ] Onboarding in 3–4 steps (install → add key/local model → first task → first skill/routine), matching the simple onboarding of AppuBot/DuskBot/Grok Bot
 - [ ] Onboarding and security documentation; privacy policy text; telemetry: none by default
+- [ ] SBOM and third-party notices (Apache-2.0 obligation); check the 10 moderate npm audit findings
 - [ ] Windows smoke tests on a clean VM; update strategy decision
 - [ ] Public release checklist and CONTRIBUTING guide
 

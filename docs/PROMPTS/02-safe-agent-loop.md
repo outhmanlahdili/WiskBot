@@ -40,8 +40,8 @@ Verified from <https://ai-sdk.dev/docs/agents/tool-approvals>. Manual approval i
 
 1. Configure `toolApproval` in one place — a per-tool map or a generic policy function that calls `PermissionEngine` and can return `'user-approval'`, `'denied'` (with reason), `'approved'`, or `undefined` (= `'not-applicable'`). Use the deprecated `needsApproval` property nowhere.
 2. The first `agent.stream()` call ends with `tool-approval-request` parts. Do **not** execute the tool in that call. Only respond to parts where `isAutomatic` is false.
-3. Renderer shows a dialog: tool name, target, and a preview/diff.
-4. User chooses **Allow once**, **Allow for this session**, or **Deny**. `allow-always` only for low-risk tools inside an allowlisted scope. Session grants live in a per-conversation in-memory map in main with a clear expiry.
+3. Renderer shows an approval **card** with tool name, resolved target, scope and concrete values (not just a description), plus a preview/diff. Cards raised by a chat message wait indefinitely; cards raised by background work may expire — show the expiry in the UI.
+4. User chooses **Allow once**, **Allow for this session**, or **Deny**. `allow-always` only for low-risk tools inside an allowlisted scope. Session grants live in a per-conversation in-memory map in main with a clear expiry. Deny must not retry until the user sends a new message.
 5. Keep conversation state as `ModelMessage[]` in main. After the first call, append `result.responseMessages`, then push a `{ role: 'tool', content: [ToolApprovalResponse] }` message with the matching `approvalId`, then call the agent again. Only then does `execute` run.
 6. **Preserve `inputSchemaInput`** on approval requests when persisting messages — the SDK uses it to revalidate that the approved input was not changed.
 7. Generate a random secret at startup (at least 32 bytes, in memory only, never persisted or sent to the renderer) and pass it as `experimental_toolApprovalSecret` so approvals are HMAC-signed and cannot be forged by a crafted IPC message.
@@ -53,9 +53,9 @@ Every decision is written to `audit_events` with redacted arguments. `Permission
 
 - `wiskbot.time.now.v1` — read, no approval.
 - `wiskbot.fs.list.v1` — read, only inside allowlisted roots; size/entry caps.
-- `wiskbot.fs.read.v1` — read, ask on first path; size cap; binary detection; redact detected secrets.
+- `wiskbot.fs.read.v1` — ask on first path outside WiskBot's own memory/skill folders; reads inside those own folders never prompt (plain read operations only — any pipe, redirect, second command or path outside still asks); size cap; binary detection; redact detected secrets.
 
-Fully qualified names. Zod `inputSchema`. `execute` only in main. No write tools, no browser, no desktop, no shell, no payments.
+Fully qualified names. Zod `inputSchema`. `execute` only in main. No write tools, no browser, no desktop, no shell, no payments. Secrets are never placed in tool input, model context, chat, audit details or logs — the app injects them around the model.
 
 ### 4. Loop control and context
 

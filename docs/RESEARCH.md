@@ -190,3 +190,93 @@ Pattern: **successful desktop/AI tools overwhelmingly use MIT or Apache-2.0 for 
 - **Copyright notice:** `Copyright 2026 WiskBot contributors`; no personal legal name or email published without explicit approval.
 - **Implementation status:** these files are **planned but not created**; Session 2 will create them in Phase 1 per `PROMPTS/01-foundation.md`.
 - **Sequence:** create `LICENSE` + `NOTICE` → `CONTRIBUTING`/`CODE_OF_CONDUCT`/`SECURITY`/`TRADEMARKS` → enable GitHub settings → then accept first external PR.
+
+## Deep study: Grok Bot, Meta Muse, DuskBot, AppuApp (researched 2026-11-26)
+
+Method: official docs, official websites, GitHub REST API, and README/docs in public repositories. Where source code or internals are unavailable, that is stated. **Verified** = directly documented by the maker or in the public repo. **Assumption** = inferred, explicitly labelled.
+
+### Identity check first
+
+| Name | What I verified |
+| --- | --- |
+| **Grok Bot** | Official xAI product with official docs at <https://docs.x.ai/grok-bot/overview>. Not the same as the Grok API. |
+| **Meta Muse** | A family of models + Model API + Muse Code CLI (<https://dev.meta.ai/docs/models>, <https://dev.meta.ai/docs/muse-code>). The "computer use" capability is a model tool protocol; the app supplies the driver. |
+| **DuskBot** | Multiple unrelated repos; the relevant one is `DuskBotAI/duskbot` (<https://github.com/DuskBotAI/duskbot>), "free Grok bot alternative that runs on your own models", 605 stars, TypeScript, created 2026-11-05. Older `DuskBot` repos are unrelated Discord/Java bots. |
+| **AppuApp** | **Ambiguous.** Searches found (a) "Appu", a children's AI tutor by Rocket Learning (<https://appuai.online/>), and (b) **AppuBot** at <https://appubot.com/> / `sarthakguptadev/AppuBot`, an open-source desktop agent app explicitly described as a "Grok Bot alternative". I studied **AppuBot** because it matches the category. If you meant the children's tutor, tell me and I will redo that section. |
+
+### Grok Bot — verified
+
+Sources: <https://docs.x.ai/grok-bot/overview>, `/how-grok-bot-works`, `/approvals-security-and-privacy`, `/computer-and-apps`, `/skills-routines-and-automations`, `/get-started>.
+
+- **Architecture (verified at product level):** desktop app on macOS/Windows/Linux; AI Bots run on a **persistent cloud computer** per user with browser, filesystem and terminal. All bots share that computer; each bot has its own screen. Work continues with the laptop closed. Internal implementation/source is **not public** — no verified stack beyond the app platforms and Cursor account integration.
+- **Task flow (verified, their own example "sign me up for the same conference as last year and expense it"):** 1) memory fills in missing details → 2) connected Gmail app finds the receipt → 3) browser on cloud computer + Vault/1Password/Secure Form signs in and pays → 4) Auto Review asks before emailing finance → 5) Google Drive logs the expense → chat shows every step.
+- **Approvals (verified):** Auto Review on by default; card shows the proposed operation and inputs. Buttons: Allow once / Always allow (saves rule) / Deny. Deny means no retry until a new user message. Custom "Ask first" and "Allow automatically" rules (max 20 each). Chat-initiated cards do not expire; background cards expire after 30 minutes. **Only the user's own messages count as instructions** — text in emails/pages does not grant permission (explicit prompt-injection defence).
+- **Secrets (verified):** Vault, 1Password, and Secure Forms fill secrets into the page; the Bot never sees them. API keys go through a masked secure secret card, excluded from transcript. Local-computer command execution is a separate policy, default "Ask every time".
+- **Skills/routines (verified):** save a successful workflow as a skill; routines run on schedules with time zones, or on Slack/GitHub/email/webhook events. Test runs perform real work; docs advise no sends during tests, a no-data/stale-data policy, and idempotent retries. Up to 50 routines per bot, 20 recent run records, rate limits.
+- **Onboarding (verified):** install → sign in → first bot → first task with explicit limits → turn it into a routine. Prebuilt bots in a marketplace.
+
+### Meta Muse — verified
+
+Sources: <https://dev.meta.ai/docs/tool-calling>, `/computer-use`, `/muse-code`, `/muse-code/permissions`, `/muse-code/configuration`, plus previous findings in this file.
+
+- **Models/API (verified):** hosted Muse Wonder/Spark/Ember; open-weight Spark Open and Glimmer; Responses API recommended for multi-turn tool use with `previous_response_id` or stateless reasoning replay.
+- **Tool calling (verified):** you define tools; **the model does not execute developer-defined tools** — your app executes them and sends results back. Responses API returns `function_call` items and `function_call_output`; Chat Completions uses `tool_calls` and `tool` messages. `strict` only validates schemas; **always validate arguments in your own code**. `tool_search` can defer large tool sets (Responses/Messages only). `parallel_tool_calls: false` limits to one call per turn.
+- **Computer use (verified):** native `computer` tool is a protocol only; the app supplies environment, driver, screenshots, validation and safety. Screenshots ≤25 MiB, pixel coordinates in the latest screenshot, safety checks must be reviewed, step budget bounds the loop.
+- **Muse Code CLI (verified):** two independent guardrails — **approval** and an **OS sandbox** (Seatbelt on macOS, bubblewrap on Linux, Windows sandbox with possible UAC prompt). Permission profiles: Ask me / Auto-review / Unrestricted / Read-only. Shell commands are reviewed **stage by stage**; rejecting one stage cancels the whole command. Network default `proxy-only`. Memory is Markdown with an index; project memory is loaded even in untrusted workspaces, so it is treated as a prompt-injection surface. The agent will not commit, amend or push unless asked.
+- **Not verified:** no public source for a Muse desktop assistant app; internal architecture beyond the CLI/API cannot be stated.
+
+### DuskBot — verified
+
+Sources: <https://github.com/DuskBotAI/duskbot> README, `docs/approval-levels.md`, `docs/routine-schedules.md`, `docs/development.md>.
+
+- **Licence (verified):** source available under **PolyForm Noncommercial 1.0.0** (read/change/share for noncommercial use); it began as a fork of Apache-2.0 OpenMausBot. Not OSI open source — relevant to our Apache-2.0 decision.
+- **Architecture (verified):** Electron + React desktop app; a **Node server on 127.0.0.1:8799** owns chats, routines, approvals, vault and engine processes. Engines are Claude Code, Codex, Gemini, Grok etc.; tools reach them through an **MCP server mounted for each turn**. Remote links use direct/ssh/Tailscale/Cloudflare tunnel/relay with AES-256-GCM sealed frames and pairing codes.
+- **Bots (verified):** each bot has a job, memory (`SOUL.md`), skills, routines and its own computer (browser/desktop, cloud container, Linux Docker VM, or the user's screen on macOS/Ubuntu with opt-in). Live view and "take control" for sign-in/captcha; the bot never sees the password.
+- **Approvals (verified):** levels are the provider's own modes: Ask / Auto-accept edits / Approve for me / **Full access** (the default). Reading a bot's own files and read-only app tools never ask. Secrets are typed by the app and redacted. Server/cloud bots run in bubblewrap/container sandboxes. **Assumption:** the Full-access default is a usability choice we should not copy.
+- **Routines (verified):** Croner with explicit IANA timezone; plain-code checks run on each tick before any AI turn (quiet ticks cost nothing); webhook addresses and bot email addresses start runs; up to 12 hours catch-up; one automatic retry on transient failure; run history; app keeps the computer awake for the hour before a due routine while plugged in; **a sleeping computer runs nothing and the app cannot wake it**.
+- **Development (verified):** deliberately small server, "no frameworks on the server, one store, one event bus"; small focused PRs; tests with scripted fake CLIs; no sleeps in tests; never touch the real `~/.duskbot`; no DCO required. Windows rule: never build shell command strings — spawn via argv, resolve `.cmd` shims to JS entrypoints.
+
+### AppuBot (the AppuApp match) — verified
+
+Sources: <https://appubot.com/>, <https://github.com/sarthakguptadev/AppuBot> README (28 stars, Apache-2.0, TypeScript, created 2026-10-17).
+
+- **Architecture (verified):** Electron desktop app + React UI; `packages/protocol` (message shapes), `packages/client` (typed gateway client), `packages/chat-core`, `packages/agent-runtime` (runs AI agents over **Agent Client Protocol**), `packages/mcp-bridge` (computer use, files, questions), `packages/theme`, plus a Mac Swift helper. Gateway listens on **127.0.0.1**. No AppuBot account in the middle.
+- **Task flow (verified):** you ask (app/voice/Telegram) → bot adds its job, memory and taught skills → your AI thinks (using the Claude/ChatGPT/Cursor/Grok/Copilot/OpenCode account already signed in) → tools click/type in real apps, terminal and files → important steps wait for approval; you can watch live or stop.
+- **Features (verified):** named bots with separate memory; teach-by-demonstration skills; routines; Telegram channel per bot; editable memory; live computer view and takeover; vault for saved logins; optional paid cloud computers. Free on your own computer; cloud $19–$109/month.
+- **Licensing/governance (verified):** Apache-2.0 with trademark and component exceptions; contributions require a **CLA** (we chose DCO instead — deliberate difference).
+
+### Comparison and what WiskBot should learn
+
+| Topic | Grok Bot | Muse | DuskBot | AppuBot | WiskBot decision |
+| --- | --- | --- | --- | --- | --- |
+| Where work runs | User's cloud computer | You supply the driver | Your computer / your server / their cloud | Your computer / their cloud | **Your Windows PC** (local-first) |
+| Model access | Grok subscription only | API key or Muse Code sign-in | Many existing subscriptions/keys | Existing subscriptions, no keys needed | **BYOK keys or local models**, no mandatory subscription |
+| Agent protocol | Undisclosed | Responses/Chat Completions + computer tool | Provider-native modes + MCP | ACP | **AI SDK 7 + tool registry** (simplest for solo dev) |
+| Approvals | Auto Review + rules | Approval profiles + OS sandbox | Provider modes, default Full | Cards, wait however long | Our `PermissionEngine`, default ask; never Full by default |
+| Secrets | Vault/Secure Form, model never sees | Credentials scrubbed from traces | App types secrets, redacted | Vault, ask before use | `safeStorage`; keys never reach renderer/model |
+| Memory | Per-bot + shared basics | Markdown index, on-demand | Editable notes | Editable notes | Explicit save/recall, user-editable (Phase 4) |
+| Skills/routines | Save skill, schedule/event routines | Workflows, skills | Croner, checks, webhooks, catch-up | Teach mode, routines | Adopt the *safe patterns*, not the scale |
+| Licence | Proprietary | Proprietary models/CLI | PolyForm Noncommercial | Apache-2.0 | **Apache-2.0** |
+
+**Adopt (patterns, not code):**
+
+1. Structured step events and approval cards showing target, scope and values (Grok Bot).
+2. Secrets injected by the app, never given to the model (all four).
+3. Read-only actions inside the bot's own folders never prompt (DuskBot) — matches our Phase 2 tool design.
+4. Chat-initiated approvals wait indefinitely; background approvals may expire (Grok Bot).
+5. Memory as an on-demand index, user-editable, and imported/project memory treated as untrusted (Muse Code, DuskBot).
+6. Prefer structured connectors/MCP over clicking a website (Grok Bot, DuskBot).
+7. Routine "test runs" that send nothing, explicit no-data/stale-data policy, catch-up window, rate limits and run history (Grok Bot, DuskBot).
+8. Live activity view, visible takeover and a hard stop control (DuskBot, AppuBot, Grok Bot).
+9. Honest sleep behaviour: keep the PC awake while plugged in, but admit a sleeping PC runs nothing (DuskBot — already in our Phase 6).
+
+**Avoid:**
+
+- Cloud-only or subscription-gated work, paid cloud as the default path (Grok Bot, AppuBot Cloud, Dusk Cloud).
+- Full access as the default approval level (DuskBot).
+- Source-available/noncommercial licences (DuskBot) — conflicts with our Apache-2.0 goal.
+- Arbitrary shell and multi-agent teams in early phases (all four rely on sandboxes or complex orchestration we cannot safely replicate yet).
+- Requiring a CLA (AppuBot) — we chose DCO.
+- ACP as our core protocol (AppuBot) — AI SDK is simpler for our provider/BYOK model.
+
+**Assumptions explicitly not verified:** internal source code of Grok Bot and the Muse desktop experience is unavailable; no claim is made about their implementation details. All DuskBot/AppuBot architecture statements come from their public repos/docs, not from runtime inspection.

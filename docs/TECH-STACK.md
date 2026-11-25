@@ -45,3 +45,16 @@ Versions below were observed on 2026-11-25. Session 2 should install current com
 - Add `@electron/rebuild` to `devDependencies` and make it part of `postinstall` or an explicit script used before `dev` and packaging.
 - Install `@ai-sdk/openai`, `@ai-sdk/openai-compatible`, **`@ai-sdk/anthropic` and `@ai-sdk/google`** (approved 2026-11-25 during Phase 1 review — Anthropic and Google are not OpenAI-compatible, so native adapters are required for their connection tests). The OpenAI-compatible package covers LM Studio, custom endpoints, and Muse Chat Completions; `@ai-sdk/openai` covers Muse's Responses API with reasoning continuity. See <https://ai-sdk.dev/providers/openai-compatible-providers> and <https://ai-sdk.dev/providers/openai-compatible-providers/meta>.
 - **Sandbox constraint discovered in Phase 1 review:** Electron does not support ESM imports in sandboxed preload scripts, and preload `require` can only load `electron` (<https://www.electronjs.org/docs/latest/tutorial/esm>, <https://www.electronjs.org/docs/latest/tutorial/sandbox>). Therefore the preload bundle must be emitted as **CJS with dependencies bundled** (`build.lib.formats: ['cjs']`, `build.externalizeDeps: false`), even though the main process stays ESM via `"type": "module"`. Do not disable `sandbox` to work around this.
+
+## Patterns adopted from the 2026-11-26 product study
+
+These are **behavioural rules**, not new dependencies. Evidence is in `RESEARCH.md`.
+
+- **Structured connectors before browser clicks.** Grok Bot and DuskBot both prefer connected apps/MCP over clicking a website when a structured tool exists. WiskBot keeps MCP in Phase 6 and browser clicks in Phase 3, but the agent should prefer a structured tool when one is available.
+- **Secrets never enter model context.** Grok Bot's Vault/Secure Form, DuskBot's vault and AppuBot's vault all inject credentials around the model. WiskBot's `safeStorage` store follows the same rule: renderer and model see only `hasKey`/masked hints.
+- **Read-only within own folders does not prompt.** DuskBot auto-allows reading a bot's own files. Our Phase 2 tools already do this; keep it.
+- **Approval cards must show target, scope and values**, and chat-initiated approvals should not expire on a timer (Grok Bot). Background approvals may expire.
+- **Memory is an index with on-demand reads**, user-editable, and imported/project memory is untrusted (Muse Code). Our Phase 4 memory design must follow this.
+- **Routines need safe test runs** that send nothing, a no-data/stale-data policy, catch-up limits, rate limits and run history (Grok Bot, DuskBot).
+- **Live activity and hard stop.** Show each agent step, allow visual takeover for sensitive steps, and provide an immediate stop control (DuskBot, AppuBot, Grok Bot).
+- **Not adopted:** cloud-only execution, subscription gating, Full-access defaults, source-available licences, arbitrary shell in early phases, CLA, and ACP as the core protocol.

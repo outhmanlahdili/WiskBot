@@ -133,3 +133,15 @@ Migration strategy: Drizzle Kit migrations, applied at startup before any window
 - Integration tests with a fake provider and temporary SQLite database.
 - Manual smoke checklist per phase; Playwright tests only for the browser worker itself.
 - Never run destructive tools against the developer's real profile; use dedicated test folders and browser contexts.
+
+## Refinements from the 2026-11-26 product study
+
+Evidence and source links are in `RESEARCH.md`. These are requirements for future phases, not new services.
+
+- **Approval card content:** every manual approval must display the tool name, resolved target, scope and concrete values (not just a description). Chat-initiated approvals wait indefinitely; background/run-initiated approvals may have an expiry shown in the UI.
+- **Read-only exemption:** reading files inside WiskBot's own memory/skills folders does not prompt at any permission level; any pipe, redirect, second command or path outside those folders still prompts. Only plain read operations qualify.
+- **Secret injection:** any future saved login or API secret is filled in by the app/driver, never passed to the model or written into chat, audit details or errors. `hasKey`/masked hints only.
+- **Memory index:** Phase 4 memory is stored as an index plus topic files; the index is injected, individual entries are read on demand, and imported/project memory is treated as untrusted prompt input.
+- **Structured-first tools:** when a structured tool (later MCP) and a browser click could both accomplish a task, prefer the structured tool.
+- **Routine safety:** Phase 6 test runs must perform no sends/purchases; schedules need an explicit no-data/stale-data policy, catch-up window, rate limits, and run history. Keep the PC awake only while plugged in and admit that a sleeping PC cannot run tasks.
+- **Live activity:** stream step-by-step activity to the UI, show a clear "assistant is acting" state, support human takeover for sign-in/CAPTCHA in later computer-use phases, and keep an immediate stop control.
