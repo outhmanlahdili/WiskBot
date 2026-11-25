@@ -73,6 +73,7 @@ All channels are namespaced, typed with Zod, and validated for `event.senderFram
 - `skills.list` / `skills.enable` / `skills.import`
 - `tasks.list` / `tasks.create` / `tasks.cancel`
 - `audit.list`
+- `app.deleteLocalData` — added during Phase 1 implementation (approved 2026-11-25) to back the required "Delete all local data" settings action; must close the DB, remove database/keys/settings/skills/logs, and be confirmed in the UI before calling
 
 Events (main → renderer): `chat.event`, `task.event`, `permission.changed`, `provider.event`, `app.error`.
 

@@ -21,7 +21,7 @@ Each phase ends with a report from Session 2 to Session 1. Do not start the next
 - [ ] SQLite + Drizzle schema and migrations with `@electron/rebuild`
 - [ ] `safeStorage` async secure key store; settings and provider registry; one provider connection test
 - [ ] i18n scaffolding with en/fr/ar catalogs and RTL support
-- [ ] Vitest unit tests for config validation, redaction, IPC schema; README + MIT license + `.gitignore`
+- [ ] Vitest unit tests for config validation, redaction, IPC schema; README + **Apache-2.0** `LICENSE` + `NOTICE` + community files + `.gitignore` (corrected 2026-11-25; earlier text said MIT)
 
 **Exit criteria:** app launches on Windows; no security warnings in console; settings can save a key and a connection test works (or fails legibly) without exposing the key; database file created with migrations applied; `npm test` passes; `npm run build` succeeds.
 
@@ -72,8 +72,13 @@ Each phase ends with a report from Session 2 to Session 1. Do not start the next
 - [ ] Task scheduler with cron/interval/one-shot, cancellation, budgets, run history
 - [ ] Optional MCP client with server installation UI, pinned versions, and egress controls
 - [ ] Local model profiles (Ollama / LM Studio) with model catalog refresh
+- [ ] **Keep-awake support** (user-approved 2026-11-25): use Electron `powerSaveBlocker.start('prevent-app-suspension')` while a task runs, and `stop(id)` when it finishes — PC stays active, screen may sleep. Source: <https://www.electronjs.org/docs/latest/api/power-save-blocker>.
+- [ ] Visible "WiskBot is keeping this PC awake" indicator; setting to disable it; battery-friendly by default (never hold the blocker indefinitely)
+- [ ] Queue tasks while offline and resume when online; prefer local models (Ollama) for offline runs
+- [ ] Optional "start WiskBot at login" setting
+- [ ] Document the hard limit: **a fully sleeping PC cannot run anything.** Waking it requires Windows OS configuration (wake timers via `powercfg /waketimers`, device wake via `powercfg /deviceenableawake`, or Wake-on-LAN), not an AI model feature. Source: <https://learn.microsoft.com/en-us/windows-hardware/design/device-experiences/powercfg-command-line-options>. Muse/Grok/GPT decide actions; the app and OS control execution and power state.
 
-**Exit:** a scheduled task runs and can be cancelled; an MCP server can be added and its tools are gated by permissions.
+**Exit:** a scheduled task runs and can be cancelled; an MCP server can be added and its tools are gated by permissions; keep-awake is opt-in with a visible indicator and stops when the task ends.
 
 ## Phase 7 — Hardening and distribution
 
