@@ -51,6 +51,7 @@ Status legend: **accepted** (implement as written) · **proposed** (needs valida
 | ADR-044 | Model-supplied CSS selectors are capped and must match exactly one element | accepted | 500-char limit, exact-one locator match, no `page.evaluate()` with model input; selectors are not script execution | If selector-based attacks appear, move to accessibility-tree refs only |
 | ADR-045 | Secret-looking tool input may remain in signed SDK history | accepted with mitigation | The model already generated the value; signed `responseMessages` cannot be rewritten. Chat, audit details and previews are sanitised, and the tool refuses the field. Never place real user secrets in tool input | If a real secret ever reaches the model, rotate it — app never asks for secrets |
 | ADR-046 | Phase 3 requires a screenshot + fill end-to-end smoke before acceptance | accepted | Implementation/type checks are not enough for a user-visible tool; Phase 3b prompt written | Never |
+| ADR-047 | Phase 3 accepted after 3b verification | accepted | Screenshot returned a local path only with no bytes in model context; fill run reached `done` in UI and audit; 42 tests + typecheck + build pass; no secrets in files/history | Never |
 | ADR-017 | Telemetry disabled by default; no user-data upload | accepted | Local-first and privacy promises | Only with opt-in and a documented policy |
 
 ## Security decisions that must not be relaxed silently

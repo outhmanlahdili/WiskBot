@@ -44,18 +44,15 @@ Owner: Session 1 · Status: active · Last updated: 2026-11-26
 
 **Accepted follow-ups:** pending approvals and session grants are in-memory (lost on restart); denied calls are stored as tool results with an explicit denial reason so replayed history stays valid — **accepted**; real BYOK providers still not live-tested. `fs.list` asks on first resolved target — **accepted** and `TOOL-CATALOG.md` corrected.
 
-## Phase 3 — Browser automation
+## Phase 3 — Browser automation (COMPLETE 2026-11-26)
 
-- [ ] BrowserWorker utility process with Playwright and a dedicated persistent profile
-- [ ] Domain allowlist and per-domain approval
-- [ ] `open`, `snapshot`, `click`, `type`, `screenshot` tools
-- [ ] Prefer a structured tool over clicking when one exists; treat all page content as untrusted; never execute page JavaScript as trusted input
-- [ ] Human takeover path for sign-in / CAPTCHA / 2FA, with credentials typed by the app and never shown to the model
-- [ ] Visible "managed browser" indicator, step-by-step activity log and immediate stop control
+- [x] Utility-process BrowserWorker with Playwright and a dedicated persistent profile
+- [x] Exact-host domain allowlist, HTTPS-only, test-mode fixtures only under `WISKBOT_TEST_MODE=1`
+- [x] Five browser tools with approvals, size caps, secret-field refusal and audited decisions
+- [x] Managed-browser indicator, step events, take over / resume / stop, crash recovery
+- [x] Phase 3b: screenshot returned a local path only; no image bytes in model context; fill reached `done` cleanly
 
-**Status: verification follow-up required (2026-11-26).** Implementation is present and internally consistent, but the GUI smoke script did not exercise the screenshot tool end-to-end, and the `fill_run_done` flag was a counting artifact. Phase 3b (`docs/PROMPTS/03b-browser-screenshot-verification.md`) must confirm both before Phase 4.
-
-**Expected exit:** a user can ask the assistant to perform a multi-step task on an allowlisted site, with approvals, take over for a sensitive step, capture a screenshot, and inspect what happened. No use of the user's real logged-in browser profile.
+**Exit criteria met:** GUI smoke covered open → snapshot → click → fill → screenshot → deny → takeover → stop. 42 tests, typecheck and build pass. No secrets in files or history. Evidence: Phase 3/3b reports, screenshots and logs.
 
 ## Phase 4 — Memory, preferences, skills
 
