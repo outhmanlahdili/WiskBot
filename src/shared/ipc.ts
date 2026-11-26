@@ -28,7 +28,9 @@ export type PermissionDefaults = z.infer<typeof PermissionDefaultsSchema>
 export const SettingsSchema = z
   .object({
     language: LanguageSchema,
-    permissionDefaults: PermissionDefaultsSchema
+    permissionDefaults: PermissionDefaultsSchema,
+    /** Absolute filesystem roots the model may list/read (Phase 2). */
+    allowedFsRoots: z.array(z.string().min(1)).max(32)
   })
   .strict()
 export type Settings = z.infer<typeof SettingsSchema>
@@ -45,7 +47,9 @@ export const ProviderKindSchema = z.enum([
   'openrouter',
   'meta-muse',
   'ollama',
-  'openai-compatible'
+  'openai-compatible',
+  /** Deterministic in-process model for tests and smoke checks; never a real API. */
+  'fake'
 ])
 export type ProviderKind = z.infer<typeof ProviderKindSchema>
 
@@ -71,6 +75,17 @@ export const ProviderPublicSchema = z.object({
 })
 export type ProviderPublic = z.infer<typeof ProviderPublicSchema>
 
+export const ProviderDefinitionPublicSchema = z.object({
+  kind: ProviderKindSchema,
+  displayName: z.string(),
+  defaultBaseUrl: z.string(),
+  defaultModelId: z.string(),
+  needsKey: z.boolean(),
+  availabilityNote: z.string().optional(),
+  modelIdPlaceholder: z.string().optional()
+})
+export type ProviderDefinitionPublic = z.infer<typeof ProviderDefinitionPublicSchema>
+
 /**
  * `apiKey` is the ONLY field that carries a secret, and it only ever travels
  * renderer -> main. It is never included in any result or event.
@@ -90,6 +105,7 @@ export const ProviderUpsertSchema = z
   })
   .strict()
   .superRefine((value, ctx) => {
+    if (value.kind === 'fake' && value.baseUrl === 'in-process://fake') return
     try {
       const url = new URL(value.baseUrl)
       const loopback = ['localhost', '127.0.0.1', '::1', '[::1]'].includes(url.hostname)
@@ -112,17 +128,95 @@ export const ConversationCreateSchema = z
 export const ChatSendSchema = z
   .object({
     conversationId: z.string().min(1),
+    providerId: z.string().min(1),
     text: z.string().trim().min(1).max(20000)
   })
   .strict()
 export const ChatCancelSchema = z.object({ conversationId: z.string().min(1).optional() }).strict()
+export const ApprovalDecisionSchema = z.enum(['allow-once', 'allow-session', 'deny'])
+export type ApprovalDecision = z.infer<typeof ApprovalDecisionSchema>
+
 export const ApprovalResponseSchema = z
   .object({
     approvalId: z.string().min(1),
     approved: z.boolean(),
+    decision: ApprovalDecisionSchema,
     reason: z.string().max(500).optional()
   })
   .strict()
+
+/** One event in the streamed chat life-cycle (main -> renderer). */
+export const ChatEventSchema = z.discriminatedUnion('event', [
+  z.object({
+    event: z.literal('text-delta'),
+    conversationId: z.string(),
+    delta: z.string()
+  }),
+  z.object({
+    event: z.literal('tool-call'),
+    conversationId: z.string(),
+    toolCallId: z.string(),
+    toolName: z.string(),
+    input: z.record(z.string(), z.unknown()),
+    risk: RiskLevelSchema,
+    target: z.string()
+  }),
+  z.object({
+    event: z.literal('tool-result'),
+    conversationId: z.string(),
+    toolCallId: z.string(),
+    toolName: z.string(),
+    output: z.unknown()
+  }),
+  z.object({
+    event: z.literal('tool-error'),
+    conversationId: z.string(),
+    toolCallId: z.string(),
+    toolName: z.string(),
+    message: z.string()
+  }),
+  z.object({
+    event: z.literal('approval-request'),
+    conversationId: z.string(),
+    approvalId: z.string(),
+    toolCallId: z.string(),
+    toolName: z.string(),
+    risk: RiskLevelSchema,
+    target: z.string(),
+    scope: z.string(),
+    preview: z.string(),
+    input: z.unknown(),
+    hasSchemaInput: z.boolean(),
+    /** null = chat-initiated card that never expires. */
+    expiresAt: z.number().nullable()
+  }),
+  z.object({
+    event: z.literal('approval-response'),
+    conversationId: z.string(),
+    approvalId: z.string(),
+    approved: z.boolean(),
+    decision: ApprovalDecisionSchema,
+    reason: z.string().optional()
+  }),
+  z.object({
+    event: z.literal('usage'),
+    conversationId: z.string(),
+    promptTokens: z.number(),
+    completionTokens: z.number(),
+    totalTokens: z.number()
+  }),
+  z.object({
+    event: z.literal('done'),
+    conversationId: z.string(),
+    finishReason: z.string().optional()
+  }),
+  z.object({
+    event: z.literal('error'),
+    conversationId: z.string().optional(),
+    message: z.string()
+  })
+])
+export type ChatEvent = z.infer<typeof ChatEventSchema>
 export const AuditListSchema = z
   .object({ limit: z.number().int().min(1).max(500).optional() })
   .strict()
@@ -132,19 +226,22 @@ export const IpcRequestSchemas = {
   'settings.get': z.void(),
   'settings.update': SettingsUpdateSchema,
   'providers.list': z.void(),
+  'providers.definitions': z.void(),
   'providers.upsert': ProviderUpsertSchema,
   'providers.remove': IdPayloadSchema,
   'providers.test': IdPayloadSchema,
   'conversations.list': z.void(),
   'conversations.create': ConversationCreateSchema,
   'conversations.delete': IdPayloadSchema,
+  'chat.messages': z.object({ conversationId: z.string().min(1) }).strict(),
   'chat.send': ChatSendSchema,
   'chat.cancel': ChatCancelSchema,
   'chat.respondApproval': ApprovalResponseSchema,
   'tools.list': z.void(),
   'permissions.get': z.void(),
   'audit.list': AuditListSchema,
-  'app.deleteLocalData': z.void()
+  'app.deleteLocalData': z.void(),
+  'app.resetKeyStore': z.object({ confirmed: z.literal(true) }).strict()
 } as const satisfies Record<string, z.ZodType>
 
 export type IpcChannel = keyof typeof IpcRequestSchemas
@@ -180,16 +277,26 @@ export interface ProviderTestResult {
   latencyMs?: number
 }
 
+export interface ChatMessageRecord {
+  id: string
+  role: 'user' | 'assistant' | 'tool'
+  content: string
+  createdAt: number
+  usageJson: string | null
+}
+
 export interface IpcResultMap {
   'settings.get': Settings
   'settings.update': Settings
   'providers.list': ProviderPublic[]
+  'providers.definitions': ProviderDefinitionPublic[]
   'providers.upsert': ProviderPublic
   'providers.remove': { removed: boolean }
   'providers.test': ProviderTestResult
   'conversations.list': Conversation[]
   'conversations.create': Conversation
   'conversations.delete': { removed: boolean }
+  'chat.messages': ChatMessageRecord[]
   'chat.send': { accepted: boolean; conversationId: string; reason?: string }
   'chat.cancel': { cancelled: boolean }
   'chat.respondApproval': { recorded: boolean; reason?: string }
@@ -197,14 +304,13 @@ export interface IpcResultMap {
   'permissions.get': PermissionDefaults
   'audit.list': AuditEventRecord[]
   'app.deleteLocalData': { deleted: boolean }
+  'app.resetKeyStore': { reset: boolean }
 }
 
 export const AppEventSchema = z.discriminatedUnion('type', [
   z.object({
     type: z.literal('chat.event'),
-    conversationId: z.string(),
-    event: z.enum(['text-delta', 'tool-call', 'approval-request', 'tool-result', 'error', 'usage']),
-    data: z.unknown().optional()
+    event: ChatEventSchema
   }),
   z.object({
     type: z.literal('task.event'),

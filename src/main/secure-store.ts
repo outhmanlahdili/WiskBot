@@ -103,6 +103,15 @@ export async function getKeyHint(providerId: string): Promise<string> {
   return key ? maskSecret(key) : ''
 }
 
+/** Explicit user recovery action. Deletes the encrypted file only on success. */
+export async function resetKeyStore(): Promise<void> {
+  const path = getKeysPath()
+  const entries = cache ?? (await load())
+  if (existsSync(path)) unlinkSync(path)
+  for (const value of Object.values(entries)) unregisterSecret(value)
+  cache = {}
+}
+
 export async function clearAllKeys(): Promise<void> {
   if (cache) {
     for (const value of Object.values(cache)) unregisterSecret(value)

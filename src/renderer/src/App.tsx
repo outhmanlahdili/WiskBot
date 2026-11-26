@@ -5,6 +5,7 @@ import type {
   Conversation,
   Language,
   PermissionDefaults,
+  ProviderDefinitionPublic,
   ProviderPublic,
   Settings
 } from '../../shared/ipc'
@@ -19,6 +20,7 @@ export default function App(): React.JSX.Element {
   const [settings, setSettings] = useState<Settings | null>(null)
   const [language, setLanguage] = useState<Language>('en')
   const [providers, setProviders] = useState<ProviderPublic[]>([])
+  const [providerDefinitions, setProviderDefinitions] = useState<ProviderDefinitionPublic[]>([])
   const [conversations, setConversations] = useState<Conversation[]>([])
   const [audit, setAudit] = useState<AuditEventRecord[]>([])
   const [activeId, setActiveId] = useState<string | null>(null)
@@ -26,16 +28,19 @@ export default function App(): React.JSX.Element {
 
   const refresh = useCallback(async () => {
     try {
-      const [nextSettings, nextProviders, nextConversations, nextAudit] = await Promise.all([
-        window.wiskbot.send('settings.get'),
-        window.wiskbot.send('providers.list'),
-        window.wiskbot.send('conversations.list'),
-        window.wiskbot.send('audit.list', {})
-      ])
+      const [nextSettings, nextProviders, nextDefinitions, nextConversations, nextAudit] =
+        await Promise.all([
+          window.wiskbot.send('settings.get'),
+          window.wiskbot.send('providers.list'),
+          window.wiskbot.send('providers.definitions'),
+          window.wiskbot.send('conversations.list'),
+          window.wiskbot.send('audit.list', {})
+        ])
       setSettings(nextSettings)
       setLanguage(nextSettings.language)
       applyDocumentLanguage(nextSettings.language)
       setProviders(nextProviders)
+      setProviderDefinitions(nextDefinitions)
       setAudit(nextAudit)
 
       let list = nextConversations
@@ -60,9 +65,8 @@ export default function App(): React.JSX.Element {
           void refresh()
           break
         case 'chat.event':
-          if (event.event === 'error') {
-            const data = event.data as { message?: string } | undefined
-            setError(data?.message ?? 'Chat error')
+          if (event.event.event === 'error') {
+            setError(event.event.message)
           }
           break
         case 'app.error':
@@ -107,6 +111,8 @@ export default function App(): React.JSX.Element {
     }
   }
 
+  const selectedProviderId = providers.find((provider) => provider.enabled)?.id ?? ''
+
   if (!settings) {
     return (
       <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
@@ -142,6 +148,7 @@ export default function App(): React.JSX.Element {
           <ChatView
             language={language}
             conversationId={activeId ?? ''}
+            providerId={selectedProviderId}
             onError={setError}
           />
         )}
@@ -150,6 +157,7 @@ export default function App(): React.JSX.Element {
             language={language}
             settings={settings}
             providers={providers}
+            definitions={providerDefinitions}
             onLanguage={(next) => void changeLanguage(next)}
             onPermissions={(defaults) => void changePermissions(defaults)}
             onRefresh={() => void refresh()}

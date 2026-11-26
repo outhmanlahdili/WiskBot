@@ -100,11 +100,37 @@ export const PROVIDER_DEFINITIONS: Record<ProviderKind, ProviderDefinition> = {
     needsKey: false,
     capabilities: { streaming: true, tools: true },
     modelIdPlaceholder: 'Model id exposed by your endpoint'
+  },
+  fake: {
+    kind: 'fake',
+    displayName: 'Fake provider (testing only)',
+    defaultBaseUrl: 'in-process://fake',
+    defaultModelId: 'fake-scripted',
+    needsKey: false,
+    capabilities: { streaming: true, tools: true },
+    availabilityNote:
+      'Deterministic local test provider. No network, no real API key, no real model.',
+    modelIdPlaceholder: 'fake-scripted'
   }
 }
 
 export function getDefinition(kind: ProviderKind): ProviderDefinition {
   return PROVIDER_DEFINITIONS[kind]
+}
+
+export function listPublicDefinitions() {
+  return PROVIDER_KINDS.map((kind) => {
+    const definition = PROVIDER_DEFINITIONS[kind]
+    return {
+      kind: definition.kind,
+      displayName: definition.displayName,
+      defaultBaseUrl: definition.defaultBaseUrl,
+      defaultModelId: definition.defaultModelId,
+      needsKey: definition.needsKey,
+      availabilityNote: definition.availabilityNote,
+      modelIdPlaceholder: definition.modelIdPlaceholder
+    }
+  })
 }
 
 export const PROVIDER_KINDS = Object.keys(PROVIDER_DEFINITIONS) as ProviderKind[]

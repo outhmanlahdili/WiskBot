@@ -3,7 +3,7 @@ import { createAnthropic } from '@ai-sdk/anthropic'
 import { createGoogleGenerativeAI } from '@ai-sdk/google'
 import { createOpenAI } from '@ai-sdk/openai'
 import { createOpenAICompatible } from '@ai-sdk/openai-compatible'
-import { generateText } from 'ai'
+import { generateText, type LanguageModel } from 'ai'
 import { eq } from 'drizzle-orm'
 import {
   ProviderCapabilitiesSchema,
@@ -15,9 +15,11 @@ import {
 import { writeAuditEvent } from '../audit'
 import { getDb } from '../database'
 import { providers } from '../database/schema'
+import { createFakeProvider } from '../fake-provider'
 import { logger, registerSecret } from '../logger'
 import { deleteKey, getKey, getKeyHint, hasKey, saveKey } from '../secure-store'
 import { safeErrorMessage } from '../redaction'
+import { getSettings } from '../settings'
 import { getDefinition } from './definitions'
 
 type ProviderRow = typeof providers.$inferSelect
@@ -127,11 +129,33 @@ function resolveModel(row: ProviderRow, apiKey: string) {
   }
 }
 
+/** Resolve a model for the agent loop. Keys never leave the main process. */
+export async function getModelForProvider(id: string): Promise<LanguageModel> {
+  const row = findRow(id)
+  if (!row) throw new Error('Provider not found.')
+  if (!row.enabled) throw new Error('This provider is disabled.')
+
+  if (row.kind === 'fake') {
+    return createFakeProvider(() => getSettings().allowedFsRoots[0]).languageModel('fake-scripted')
+  }
+
+  const definition = getDefinition(row.kind as ProviderKind)
+  const storedKey = (await getKey(id)) ?? ''
+  if (definition.needsKey && !storedKey) {
+    throw new Error(`No API key is stored for ${row.displayName}.`)
+  }
+  registerSecret(storedKey)
+  return resolveModel(row, storedKey || 'ollama')
+}
+
 /** The ONLY network call in Phase 1. The key stays in main and is redacted from errors. */
 export async function testProvider(id: string): Promise<ProviderTestResult> {
   const row = findRow(id)
   if (!row) return { ok: false, message: 'Provider not found.' }
   if (!row.enabled) return { ok: false, message: 'This provider is disabled.' }
+  if (row.kind === 'fake') {
+    return { ok: true, message: 'Fake provider is available locally (no network).', latencyMs: 0 }
+  }
 
   const definition = getDefinition(row.kind as ProviderKind)
   const storedKey = (await getKey(id)) ?? ''

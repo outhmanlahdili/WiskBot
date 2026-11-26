@@ -36,7 +36,7 @@ export function canonicalizeWithinRoot(root: string, candidate: string): CheckRe
   return { ok: true, path: resolved }
 }
 
-function isInside(root: string, target: string): boolean {
+export function isInside(root: string, target: string): boolean {
   const rootNorm = normalizeForCompare(root)
   const targetNorm = normalizeForCompare(target)
   if (targetNorm === rootNorm) return true

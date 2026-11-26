@@ -4,6 +4,7 @@ import type {
   Language,
   PermissionDefaults,
   PermissionMode,
+  ProviderDefinitionPublic,
   ProviderKind,
   ProviderPublic,
   ProviderUpsert,
@@ -24,44 +25,6 @@ import {
   DialogTrigger
 } from './ui/dialog'
 
-interface KindOption {
-  kind: ProviderKind
-  label: string
-  baseUrl: string
-  modelId: string
-  availabilityNote?: string
-}
-
-const KIND_OPTIONS: KindOption[] = [
-  { kind: 'openai', label: 'OpenAI', baseUrl: 'https://api.openai.com/v1', modelId: '' },
-  { kind: 'anthropic', label: 'Anthropic', baseUrl: 'https://api.anthropic.com/v1', modelId: '' },
-  {
-    kind: 'google',
-    label: 'Google',
-    baseUrl: 'https://generativelanguage.googleapis.com/v1beta',
-    modelId: ''
-  },
-  { kind: 'groq', label: 'Groq', baseUrl: 'https://api.groq.com/openai/v1', modelId: '' },
-  { kind: 'mistral', label: 'Mistral AI', baseUrl: 'https://api.mistral.ai/v1', modelId: '' },
-  { kind: 'deepseek', label: 'DeepSeek', baseUrl: 'https://api.deepseek.com/v1', modelId: '' },
-  { kind: 'openrouter', label: 'OpenRouter', baseUrl: 'https://openrouter.ai/api/v1', modelId: '' },
-  {
-    kind: 'meta-muse',
-    label: 'Meta Model API (Muse)',
-    baseUrl: 'https://api.meta.ai/v1',
-    modelId: 'muse-spark-1.3',
-    availabilityNote:
-      'Availability depends on your region. Access is controlled by Meta per jurisdiction.'
-  },
-  {
-    kind: 'ollama',
-    label: 'Ollama (local)',
-    baseUrl: 'http://localhost:11434/v1',
-    modelId: ''
-  },
-  { kind: 'openai-compatible', label: 'OpenAI-compatible endpoint', baseUrl: '', modelId: '' }
-]
-
 const MODES: PermissionMode[] = ['deny', 'ask', 'allow-once', 'allow-session', 'allow-always']
 const RISKS: RiskLevel[] = ['read', 'write', 'external', 'destructive']
 
@@ -75,22 +38,27 @@ interface FormState {
   enabled: boolean
 }
 
-function blankForm(): FormState {
-  const kind = KIND_OPTIONS[0]
+function blankForm(definitions: ProviderDefinitionPublic[]): FormState {
+  const first = definitions[0]
   return {
-    kind: kind.kind,
-    displayName: kind.label,
-    baseUrl: kind.baseUrl,
-    modelId: kind.modelId,
+    kind: first?.kind ?? 'openai-compatible',
+    displayName: first?.displayName ?? '',
+    baseUrl: first?.defaultBaseUrl ?? '',
+    modelId: first?.defaultModelId ?? '',
     apiKey: '',
     enabled: true
   }
+}
+
+function isAbsolutePath(value: string): boolean {
+  return /^[A-Za-z]:[\\/]/.test(value) || value.startsWith('/') || value.startsWith('\\\\')
 }
 
 interface SettingsViewProps {
   language: Language
   settings: Settings
   providers: ProviderPublic[]
+  definitions: ProviderDefinitionPublic[]
   onLanguage: (language: Language) => void
   onPermissions: (defaults: PermissionDefaults) => void
   onRefresh: () => void
@@ -101,25 +69,32 @@ export function SettingsView({
   language,
   settings,
   providers,
+  definitions,
   onLanguage,
   onPermissions,
   onRefresh,
   onError
 }: SettingsViewProps) {
-  const [form, setForm] = useState<FormState>(blankForm)
+  const [form, setForm] = useState<FormState>(() => blankForm(definitions))
   const [testing, setTesting] = useState<string | null>(null)
   const [testMessage, setTestMessage] = useState('')
   const [deleteOpen, setDeleteOpen] = useState(false)
+  const [folderInput, setFolderInput] = useState('')
+  const [folderMessage, setFolderMessage] = useState('')
+  const [resetOpen, setResetOpen] = useState(false)
+  const [resetMessage, setResetMessage] = useState('')
   const t = (key: TranslationKey) => translate(language, key)
 
+  const selectedDefinition = definitions.find((item) => item.kind === form.kind)
+
   const chooseKind = (kind: ProviderKind) => {
-    const option = KIND_OPTIONS.find((item) => item.kind === kind) ?? KIND_OPTIONS[0]
+    const definition = definitions.find((item) => item.kind === kind) ?? definitions[0]
     setForm({
       ...form,
       kind,
-      displayName: option.label,
-      baseUrl: option.baseUrl,
-      modelId: option.modelId,
+      displayName: definition?.displayName ?? kind,
+      baseUrl: definition?.defaultBaseUrl ?? '',
+      modelId: definition?.defaultModelId ?? '',
       apiKey: ''
     })
   }
@@ -153,7 +128,7 @@ export function SettingsView({
     }
     try {
       await window.wiskbot.send('providers.upsert', payload)
-      setForm(blankForm())
+      setForm(blankForm(definitions))
       setTestMessage('')
       onRefresh()
     } catch (error) {
@@ -177,7 +152,7 @@ export function SettingsView({
   const remove = async (id: string) => {
     try {
       await window.wiskbot.send('providers.remove', { id })
-      if (form.id === id) setForm(blankForm())
+      if (form.id === id) setForm(blankForm(definitions))
       onRefresh()
     } catch (error) {
       onError(String(error))
@@ -186,6 +161,44 @@ export function SettingsView({
 
   const changePermission = (risk: RiskLevel, mode: PermissionMode) => {
     onPermissions({ ...settings.permissionDefaults, [risk]: mode })
+  }
+
+  const saveFolders = async (roots: string[]) => {
+    try {
+      await window.wiskbot.send('settings.update', { allowedFsRoots: roots })
+      setFolderMessage('')
+      onRefresh()
+    } catch (error) {
+      setFolderMessage(`${t('settings.testFailure')}: ${String(error)}`)
+    }
+  }
+
+  const addFolder = async () => {
+    const value = folderInput.trim()
+    if (!isAbsolutePath(value)) {
+      setFolderMessage(t('settings.invalidAbsolutePath'))
+      return
+    }
+    if (settings.allowedFsRoots.includes(value)) {
+      setFolderInput('')
+      return
+    }
+    setFolderInput('')
+    await saveFolders([...settings.allowedFsRoots, value])
+  }
+
+  const removeFolder = async (root: string) => {
+    await saveFolders(settings.allowedFsRoots.filter((item) => item !== root))
+  }
+
+  const resetKeyStore = async () => {
+    try {
+      const result = await window.wiskbot.send('app.resetKeyStore', { confirmed: true })
+      setResetMessage(result.reset ? t('settings.resetKeyStoreSuccess') : t('settings.resetKeyStoreError'))
+      onRefresh()
+    } catch (error) {
+      setResetMessage(`${t('settings.resetKeyStoreError')}: ${String(error)}`)
+    }
   }
 
   const deleteAll = async () => {
@@ -259,12 +272,17 @@ export function SettingsView({
                 value={form.kind}
                 onChange={(event) => chooseKind(event.target.value as ProviderKind)}
               >
-                {KIND_OPTIONS.map((option) => (
-                  <option key={option.kind} value={option.kind}>
-                    {option.label}
+                {definitions.map((definition) => (
+                  <option key={definition.kind} value={definition.kind}>
+                    {definition.displayName}
                   </option>
                 ))}
               </select>
+              {selectedDefinition?.availabilityNote && (
+                <span className="text-xs text-muted-foreground">
+                  {selectedDefinition.availabilityNote}
+                </span>
+              )}
             </label>
             <label className="flex flex-col gap-1 text-sm">
               {t('settings.displayName')}
@@ -284,6 +302,7 @@ export function SettingsView({
               {t('settings.modelId')}
               <Input
                 value={form.modelId}
+                placeholder={selectedDefinition?.modelIdPlaceholder}
                 onChange={(event) => setForm({ ...form, modelId: event.target.value })}
               />
             </label>
@@ -296,6 +315,11 @@ export function SettingsView({
                 onChange={(event) => setForm({ ...form, apiKey: event.target.value })}
               />
               <span className="text-xs text-muted-foreground">{t('settings.apiKeyHelp')}</span>
+              <span className="text-xs text-muted-foreground">
+                {selectedDefinition?.needsKey === false
+                  ? t('settings.keyOptional')
+                  : t('settings.keyRequired')}
+              </span>
             </label>
             <label className="flex items-center gap-2 text-sm sm:col-span-2">
               <input
@@ -306,11 +330,11 @@ export function SettingsView({
               {t('settings.enabled')}
             </label>
             <div className="flex gap-2 sm:col-span-2">
-              <Button type="button" onClick={save}>
+              <Button type="button" onClick={() => void save()}>
                 {t('settings.save')}
               </Button>
               {form.id && (
-                <Button type="button" variant="outline" onClick={() => setForm(blankForm())}>
+                <Button type="button" variant="outline" onClick={() => setForm(blankForm(definitions))}>
                   {t('settings.cancel')}
                 </Button>
               )}
@@ -323,13 +347,55 @@ export function SettingsView({
 
         <Card>
           <CardHeader>
+            <CardTitle>{t('settings.allowedFolders')}</CardTitle>
+            <CardDescription>{t('settings.allowedFoldersHelp')}</CardDescription>
+          </CardHeader>
+          <CardContent className="flex flex-col gap-3">
+            {settings.allowedFsRoots.length === 0 && (
+              <p className="text-sm text-muted-foreground">{t('settings.allowedFoldersNone')}</p>
+            )}
+            {settings.allowedFsRoots.map((root) => (
+              <div
+                key={root}
+                className="flex items-center justify-between gap-2 rounded-md border border-border px-3 py-2 text-sm"
+              >
+                <span className="min-w-0 break-all" dir="auto">{root}</span>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => void removeFolder(root)}
+                >
+                  {t('settings.removeFolder')}
+                </Button>
+              </div>
+            ))}
+            <div className="flex items-end gap-2">
+              <label className="flex flex-1 flex-col gap-1 text-sm">
+                {t('settings.folderPath')}
+                <Input
+                  value={folderInput}
+                  onChange={(event) => setFolderInput(event.target.value)}
+                  aria-label={t('settings.folderPath')}
+                />
+              </label>
+              <Button type="button" onClick={() => void addFolder()}>
+                {t('settings.addFolder')}
+              </Button>
+            </div>
+            {folderMessage && <p className="text-sm text-muted-foreground">{folderMessage}</p>}
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader>
             <CardTitle>{t('settings.permissions')}</CardTitle>
             <CardDescription>{t('settings.permissionsHelp')}</CardDescription>
           </CardHeader>
           <CardContent className="grid gap-3 sm:grid-cols-2">
             {RISKS.map((risk) => (
               <label key={risk} className="flex items-center justify-between gap-2 text-sm">
-                <span className="capitalize">{risk}</span>
+                <span className="capitalize">{t(`risk.${risk}` as TranslationKey)}</span>
                 <select
                   className="h-9 rounded-md border border-input bg-background px-2"
                   value={settings.permissionDefaults[risk]}
@@ -361,6 +427,45 @@ export function SettingsView({
               <option value="fr">Français</option>
               <option value="ar">العربية</option>
             </select>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader>
+            <CardTitle>{t('settings.resetKeyStore')}</CardTitle>
+          </CardHeader>
+          <CardContent className="flex flex-col gap-2">
+            <p className="text-sm text-muted-foreground">{t('settings.resetKeyStoreDescription')}</p>
+            <p className="text-sm text-destructive">{t('settings.resetKeyStoreWarning')}</p>
+            <div>
+              <Dialog open={resetOpen} onOpenChange={setResetOpen}>
+                <DialogTrigger asChild>
+                  <Button variant="destructive">{t('settings.resetKeyStore')}</Button>
+                </DialogTrigger>
+                <DialogContent>
+                  <DialogHeader>
+                    <DialogTitle>{t('settings.resetKeyStoreTitle')}</DialogTitle>
+                    <DialogDescription>{t('settings.resetKeyStoreWarning')}</DialogDescription>
+                  </DialogHeader>
+                  <div className="mt-5 flex justify-end gap-2">
+                    <DialogClose asChild>
+                      <Button variant="outline">{t('settings.cancel')}</Button>
+                    </DialogClose>
+                    <Button
+                      variant="destructive"
+                      onClick={() => {
+                        setResetOpen(false)
+                        void resetKeyStore()
+                      }}
+                    >
+                      <Check className="h-4 w-4" aria-hidden="true" />
+                      {t('settings.resetKeyStoreConfirm')}
+                    </Button>
+                  </div>
+                </DialogContent>
+              </Dialog>
+            </div>
+            {resetMessage && <p className="text-sm text-muted-foreground">{resetMessage}</p>}
           </CardContent>
         </Card>
 

@@ -45,6 +45,12 @@ export function getDb(): WiskBotDatabase {
   return database
 }
 
+/** Test-only injection so integration tests use a temporary SQLite file. */
+export function useDatabaseForTests(instance: WiskBotDatabase, sqliteInstance: Database.Database): void {
+  database = instance
+  sqlite = sqliteInstance
+}
+
 export function closeDatabase(): void {
   if (sqlite) {
     sqlite.close()

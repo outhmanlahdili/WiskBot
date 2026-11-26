@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto'
+import { join } from 'node:path'
 import { ipcMain, webContents, type IpcMainInvokeEvent } from 'electron'
 import { desc, eq } from 'drizzle-orm'
 import {
@@ -11,11 +12,22 @@ import {
   type IpcResultMap,
   type ToolDescriptor
 } from '../shared/ipc'
+import { APPROVAL_SECRET } from './agent/secret'
+import { cancelRun, respondApproval, runAgent } from './agent/runner'
 import { writeAuditEvent } from './audit'
 import { deleteAllLocalData } from './data'
-import { auditEvents, conversations, getDb } from './database'
+import { auditEvents, conversations, getDb, messages } from './database'
 import { logger } from './logger'
-import { listProviders, removeProvider, testProvider, upsertProvider } from './providers/registry'
+import { getUserDataDir } from './paths'
+import {
+  getModelForProvider,
+  listProviders,
+  removeProvider,
+  testProvider,
+  upsertProvider
+} from './providers/registry'
+import { listPublicDefinitions } from './providers/definitions'
+import { resetKeyStore } from './secure-store'
 import { getSettings, updateSettings } from './settings'
 
 const APP_PROTOCOL = 'wiskbot'
@@ -59,8 +71,8 @@ function handle<C extends IpcChannel>(
   })
 }
 
-/** Metadata only — no tool is executed in Phase 1. */
-const PHASE_1_TOOLS: ToolDescriptor[] = [
+/** Metadata only — execution happens in the main process via ToolLoopAgent. */
+const PHASE_2_TOOLS: ToolDescriptor[] = [
   {
     name: 'wiskbot.time.now.v1',
     risk: 'read',
@@ -68,9 +80,15 @@ const PHASE_1_TOOLS: ToolDescriptor[] = [
     approval: 'allow-once'
   },
   {
-    name: 'wiskbot.providers.test.v1',
-    risk: 'external',
-    description: 'Generate a short response with the selected provider',
+    name: 'wiskbot.fs.list.v1',
+    risk: 'read',
+    description: 'List entries in an allowlisted directory',
+    approval: 'ask'
+  },
+  {
+    name: 'wiskbot.fs.read.v1',
+    risk: 'read',
+    description: 'Read a text file in an allowlisted directory',
     approval: 'ask'
   }
 ]
@@ -93,6 +111,8 @@ export function registerIpcHandlers(): void {
   })
 
   handle('providers.list', () => listProviders())
+
+  handle('providers.definitions', () => listPublicDefinitions())
 
   handle('providers.upsert', async (payload) => {
     const provider = await upsertProvider(payload)
@@ -167,26 +187,77 @@ export function registerIpcHandlers(): void {
     return { removed: true }
   })
 
-  // Explicit Phase 1 stubs: the schema and handler exist, the agent loop does not.
-  handle('chat.send', (payload) => {
-    const reason = 'The agent loop is not implemented in Phase 1.'
-    emitAppEvent({
-      type: 'chat.event',
-      conversationId: payload.conversationId,
-      event: 'error',
-      data: { message: reason }
-    })
-    return { accepted: false, conversationId: payload.conversationId, reason }
+  handle('chat.messages', (payload) =>
+    getDb()
+      .select()
+      .from(messages)
+      .where(eq(messages.conversationId, payload.conversationId))
+      .orderBy(desc(messages.createdAt))
+      .all()
+      .map((row) => {
+        let content = ''
+        try {
+          const parsed = JSON.parse(row.partsJson) as unknown
+          if (typeof parsed === 'string') {
+            content = parsed
+          } else if (Array.isArray(parsed) && parsed[0] && (parsed[0] as { type?: string }).type === 'text') {
+            content = String((parsed[0] as { text?: unknown }).text ?? '')
+          } else {
+            content = JSON.stringify(parsed)
+          }
+        } catch {
+          content = row.partsJson
+        }
+        return {
+          id: row.id,
+          role: row.role as 'user' | 'assistant' | 'tool',
+          content,
+          createdAt: row.createdAt,
+          usageJson: row.usageJson
+        }
+      })
+  )
+
+  handle('chat.send', async (payload) => {
+    try {
+      const model = await getModelForProvider(payload.providerId)
+      const settings = getSettings()
+      const dataDir = getUserDataDir()
+      void runAgent({
+        deps: {
+          db: getDb(),
+          settings,
+          ownDirs: [join(dataDir, 'memory'), join(dataDir, 'skills')],
+          model,
+          approvalSecret: APPROVAL_SECRET,
+          emit: (event) => emitAppEvent({ type: 'chat.event', event })
+        },
+        conversationId: payload.conversationId,
+        text: payload.text
+      }).catch((error) => {
+        logger.error('agent', error)
+      })
+      return { accepted: true, conversationId: payload.conversationId }
+    } catch (error) {
+      const reason = error instanceof Error ? error.message : String(error)
+      return { accepted: false, conversationId: payload.conversationId, reason }
+    }
   })
 
-  handle('chat.cancel', () => ({ cancelled: true }))
+  handle('chat.cancel', (payload) => {
+    const cancelled = payload.conversationId ? cancelRun(payload.conversationId) : false
+    return { cancelled }
+  })
 
-  handle('chat.respondApproval', () => ({
-    recorded: false,
-    reason: 'No approval flow is active in Phase 1.'
-  }))
+  handle('chat.respondApproval', (payload) => {
+    const recorded = respondApproval(payload.approvalId, payload.decision)
+    return {
+      recorded,
+      reason: recorded ? undefined : 'Approval is no longer pending.'
+    }
+  })
 
-  handle('tools.list', () => PHASE_1_TOOLS)
+  handle('tools.list', () => PHASE_2_TOOLS)
 
   handle('permissions.get', () => getSettings().permissionDefaults)
 
@@ -209,4 +280,17 @@ export function registerIpcHandlers(): void {
   )
 
   handle('app.deleteLocalData', async () => deleteAllLocalData())
+
+  handle('app.resetKeyStore', async (payload) => {
+    // Payload requires confirmed: true, so an accidental call cannot delete keys.
+    void payload
+    try {
+      await resetKeyStore()
+      writeAuditEvent('app.resetKeyStore', 'keys.enc', 'allow', {})
+      return { reset: true }
+    } catch (error) {
+      logger.error('secure-store', error)
+      throw new Error('The encrypted key store could not be reset. The existing file was left untouched.')
+    }
+  })
 }

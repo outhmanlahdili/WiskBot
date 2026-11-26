@@ -6,7 +6,8 @@ import { DEFAULT_PERMISSION_DEFAULTS } from './permissions'
 
 export const DEFAULT_SETTINGS: Settings = {
   language: 'en',
-  permissionDefaults: { ...DEFAULT_PERMISSION_DEFAULTS }
+  permissionDefaults: { ...DEFAULT_PERMISSION_DEFAULTS },
+  allowedFsRoots: []
 }
 
 let cached: Settings | null = null
@@ -27,7 +28,8 @@ function load(): Settings {
       permissionDefaults: {
         ...DEFAULT_PERMISSION_DEFAULTS,
         ...((stored.permissionDefaults as object) ?? {})
-      }
+      },
+      allowedFsRoots: Array.isArray(stored.allowedFsRoots) ? stored.allowedFsRoots : []
     })
   } catch (error) {
     logger.warn('settings', 'Stored settings were invalid; defaults were used.', {
@@ -45,7 +47,8 @@ export function updateSettings(patch: Partial<Settings>): Settings {
     permissionDefaults: {
       ...current.permissionDefaults,
       ...(patch.permissionDefaults ?? {})
-    }
+    },
+    allowedFsRoots: patch.allowedFsRoots ?? current.allowedFsRoots
   })
 
   ensureUserDataDir()
