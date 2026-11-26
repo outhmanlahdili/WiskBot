@@ -40,6 +40,44 @@ export function createFakeModel(options: FakeModelOptions): LanguageModel {
     const parts: LanguageModelV4StreamPart[] = [{ type: 'stream-start', warnings: [] }]
 
     if (
+      lower.includes('memory save') ||
+      lower.includes('memory recall') ||
+      lower.includes('skill invoke')
+    ) {
+      if (call > 1) {
+        parts.push({ type: 'text-start', id: 'txt_memory_2' })
+        parts.push({
+          type: 'text-delta',
+          id: 'txt_memory_2',
+          delta: 'Done with that local task.'
+        })
+        parts.push({ type: 'text-end', id: 'txt_memory_2' })
+        parts.push({ type: 'finish', usage, finishReason: { unified: 'stop', raw: 'stop' } })
+        return parts
+      }
+      let toolName = 'wiskbot.memory.save.v1'
+      let input: Record<string, unknown> = {
+        kind: 'preference',
+        content: 'The user prefers Morocco as their home region.'
+      }
+      if (lower.includes('memory recall')) {
+        toolName = 'wiskbot.memory.recall.v1'
+        input = { query: 'Morocco' }
+      } else if (lower.includes('skill invoke')) {
+        toolName = 'wiskbot.skill.invoke.v1'
+        input = { skillId: 'folder-summary' }
+      }
+      parts.push({
+        type: 'tool-call',
+        toolCallId: `fake_memory_${suffix}_${call}`,
+        toolName,
+        input: JSON.stringify(input)
+      })
+      parts.push({ type: 'finish', usage, finishReason: { unified: 'tool-calls', raw: 'tool_calls' } })
+      return parts
+    }
+
+    if (
       lower.includes('browser open') ||
       lower.includes('browser snapshot') ||
       lower.includes('browser click') ||

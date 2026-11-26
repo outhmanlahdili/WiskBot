@@ -100,6 +100,15 @@ export default function App(): React.JSX.Element {
     }
   }
 
+  const changeTone = async (tone: Settings['tone']) => {
+    try {
+      const updated = await window.wiskbot.send('settings.update', { tone })
+      setSettings(updated)
+    } catch (cause) {
+      setError(String(cause))
+    }
+  }
+
   const newChat = async () => {
     try {
       const created = await window.wiskbot.send('conversations.create', {})
@@ -160,6 +169,7 @@ export default function App(): React.JSX.Element {
             definitions={providerDefinitions}
             onLanguage={(next) => void changeLanguage(next)}
             onPermissions={(defaults) => void changePermissions(defaults)}
+            onTone={(next) => void changeTone(next)}
             onRefresh={() => void refresh()}
             onError={setError}
           />

@@ -32,7 +32,9 @@ export const SettingsSchema = z
     /** Absolute filesystem roots the model may list/read (Phase 2). */
     allowedFsRoots: z.array(z.string().min(1)).max(32),
     /** Exact hosts the managed browser may navigate to (Phase 3). */
-    browserDomains: z.array(z.string().min(1)).max(64)
+    browserDomains: z.array(z.string().min(1)).max(64),
+    /** Assistant tone used in system instructions (Phase 4). */
+    tone: z.enum(['concise', 'friendly', 'formal'])
   })
   .strict()
 export type Settings = z.infer<typeof SettingsSchema>
@@ -122,6 +124,27 @@ export const ProviderUpsertSchema = z
     }
   })
 export type ProviderUpsert = z.input<typeof ProviderUpsertSchema>
+
+export const MemoryKindSchema = z.enum(['preference', 'fact', 'instruction', 'imported', 'project'])
+export type MemoryKind = z.infer<typeof MemoryKindSchema>
+
+export const MemoryUpsertSchema = z
+  .object({
+    id: z.string().regex(/^[a-zA-Z0-9_-]{1,64}$/).optional(),
+    kind: MemoryKindSchema,
+    content: z.string().trim().min(1).max(4096),
+    source: z.string().trim().max(120).optional(),
+    confidence: z.number().min(0).max(1).optional()
+  })
+  .strict()
+
+export const MemorySetEnabledSchema = z
+  .object({ id: z.string().min(1), enabled: z.boolean() })
+  .strict()
+
+export const SkillSetEnabledSchema = z
+  .object({ id: z.string().min(1), enabled: z.boolean() })
+  .strict()
 
 export const IdPayloadSchema = z.object({ id: z.string().min(1) }).strict()
 export const ConversationCreateSchema = z
@@ -229,6 +252,18 @@ export const ChatEventSchema = z.discriminatedUnion('event', [
     conversationId: z.string().optional(),
     active: z.boolean(),
     message: z.string().optional()
+  }),
+  z.object({
+    event: z.literal('memory-context'),
+    conversationId: z.string().optional(),
+    entries: z.array(
+      z.object({
+        id: z.string(),
+        kind: z.string(),
+        preview: z.string(),
+        trusted: z.boolean()
+      })
+    )
   })
 ])
 export type ChatEvent = z.infer<typeof ChatEventSchema>
@@ -259,6 +294,12 @@ export const IpcRequestSchemas = {
   'browser.takeover': z.object({ active: z.boolean() }).strict(),
   'browser.stop': z.void(),
   'browser.restart': z.void(),
+  'memory.list': z.void(),
+  'memory.upsert': MemoryUpsertSchema,
+  'memory.delete': IdPayloadSchema,
+  'memory.setEnabled': MemorySetEnabledSchema,
+  'skills.list': z.void(),
+  'skills.setEnabled': SkillSetEnabledSchema,
   'app.deleteLocalData': z.void(),
   'app.resetKeyStore': z.object({ confirmed: z.literal(true) }).strict()
 } as const satisfies Record<string, z.ZodType>
@@ -296,6 +337,30 @@ export interface ProviderTestResult {
   latencyMs?: number
 }
 
+export interface MemoryRecord {
+  id: string
+  kind: MemoryKind
+  content: string
+  source: string | null
+  confidence: number
+  createdAt: number
+  updatedAt: number
+  enabled: boolean
+  trusted: boolean
+}
+
+export interface SkillRecord {
+  id: string
+  name: string
+  version: string
+  description: string
+  whenToUse: string
+  requiredScopes: string[]
+  maxSteps: number
+  enabled: boolean
+  path: string
+}
+
 export interface ChatMessageRecord {
   id: string
   role: 'user' | 'assistant' | 'tool'
@@ -330,6 +395,12 @@ export interface IpcResultMap {
   'browser.takeover': { active: boolean }
   'browser.stop': { stopped: boolean }
   'browser.restart': { restarted: boolean }
+  'memory.list': MemoryRecord[]
+  'memory.upsert': MemoryRecord
+  'memory.delete': { removed: boolean }
+  'memory.setEnabled': MemoryRecord
+  'skills.list': SkillRecord[]
+  'skills.setEnabled': SkillRecord
   'app.deleteLocalData': { deleted: boolean }
   'app.resetKeyStore': { reset: boolean }
 }

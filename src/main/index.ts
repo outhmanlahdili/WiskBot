@@ -2,6 +2,7 @@ import { app, BrowserWindow, dialog, Menu, protocol } from 'electron'
 import { electronApp } from '@electron-toolkit/utils'
 import { initializeDatabase } from './database'
 import { registerIpcHandlers } from './ipc'
+import { ensureBuiltinSkill } from './skills'
 import { logger } from './logger'
 import {
   applyCspHeaders,
@@ -37,6 +38,12 @@ if (!app.requestSingleInstanceLock()) {
       )
       app.quit()
       return
+    }
+
+    try {
+      ensureBuiltinSkill()
+    } catch (error) {
+      logger.error('skills', error)
     }
 
     applyCspHeaders()

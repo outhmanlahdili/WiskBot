@@ -20,6 +20,7 @@ interface ChatViewProps {
 
 type ApprovalRequest = Extract<ChatEvent, { event: 'approval-request' }>
 type BrowserStatus = Extract<ChatEvent, { event: 'browser-status' }>['status']
+type MemoryContextEntry = Extract<ChatEvent, { event: 'memory-context' }>['entries'][number]
 
 function format(template: string, values: Record<string, string>): string {
   return template.replace(/\{(\w+)\}/g, (_match, key: string) => values[key] ?? '')
@@ -43,6 +44,7 @@ export function ChatView({ language, conversationId, providerId, onError }: Chat
   const [browserUrl, setBrowserUrl] = useState('')
   const [browserMessage, setBrowserMessage] = useState('')
   const [takeoverActive, setTakeoverActive] = useState(false)
+  const [memoryContext, setMemoryContext] = useState<MemoryContextEntry[] | null>(null)
   const bottomRef = useRef<HTMLDivElement>(null)
   const t = (key: TranslationKey) => translate(language, key)
 
@@ -53,6 +55,7 @@ export function ChatView({ language, conversationId, providerId, onError }: Chat
     setResponded(new Set())
     setBusy(false)
     setNotice('')
+    setMemoryContext(null)
     if (!conversationId) {
       setHistory([])
       return () => {
@@ -94,6 +97,11 @@ export function ChatView({ language, conversationId, providerId, onError }: Chat
     return window.wiskbot.onEvent((event) => {
       if (event.type !== 'chat.event') return
       const incoming = event.event
+      if (incoming.event === 'memory-context') {
+        if (incoming.conversationId && incoming.conversationId !== conversationId) return
+        setMemoryContext(incoming.entries)
+        return
+      }
       if (incoming.event === 'browser-status' || incoming.event === 'browser-takeover') {
         if (incoming.conversationId && incoming.conversationId !== conversationId) return
         if (incoming.event === 'browser-status') {
@@ -222,9 +230,16 @@ export function ChatView({ language, conversationId, providerId, onError }: Chat
     </span>
   )
 
+  const memoryKindLabel = (kind: string): string => {
+    const key = `memory.kind.${kind}` as TranslationKey
+    const label = t(key)
+    return label === key ? kind : label
+  }
+
   const renderPart = (part: ChatEvent, index: number): React.JSX.Element | null => {
     switch (part.event) {
       case 'text-delta':
+      case 'memory-context':
         return null
       case 'tool-call':
         return (
@@ -485,6 +500,30 @@ export function ChatView({ language, conversationId, providerId, onError }: Chat
             <div className={`mt-1 whitespace-pre-wrap ${busy ? 'animate-pulse' : ''}`} dir="auto">
               {assistantText}
             </div>
+          </div>
+        )}
+
+        {memoryContext && (
+          <div className="rounded-md border border-border bg-muted/40 px-3 py-2 text-xs">
+            <div className="font-medium text-muted-foreground">{t('chat.contextTitle')}</div>
+            <ul className="mt-1 flex flex-col gap-1">
+              {memoryContext.map((entry) => (
+                <li key={entry.id} className="flex flex-wrap items-center gap-1.5">
+                  <span className="rounded border border-border bg-background px-1.5 py-0.5">
+                    {memoryKindLabel(entry.kind)}
+                  </span>
+                  <span className="text-muted-foreground">{entry.id}</span>
+                  <span className="min-w-0 break-words" dir="auto">
+                    {shortText(entry.preview, 120)}
+                  </span>
+                  {!entry.trusted && (
+                    <span className="rounded border border-destructive bg-destructive/10 px-1.5 py-0.5 text-destructive">
+                      {t('chat.contextUntrusted')}
+                    </span>
+                  )}
+                </li>
+              ))}
+            </ul>
           </div>
         )}
 

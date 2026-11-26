@@ -131,7 +131,8 @@ beforeEach(() => {
       destructive: 'ask'
     },
     allowedFsRoots: [root],
-    browserDomains: ['127.0.0.1']
+    browserDomains: ['127.0.0.1'],
+    tone: 'concise'
   }
   events = []
   browser = makeBrowser()

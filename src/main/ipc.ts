@@ -19,7 +19,9 @@ import { writeAuditEvent } from './audit'
 import { deleteAllLocalData } from './data'
 import { auditEvents, conversations, getDb, messages } from './database'
 import { logger } from './logger'
+import { deleteMemory, listMemories, saveMemory, setMemoryEnabled } from './memory'
 import { getUserDataDir } from './paths'
+import { listSkills, setSkillEnabled } from './skills'
 import {
   getModelForProvider,
   listProviders,
@@ -73,7 +75,7 @@ function handle<C extends IpcChannel>(
 }
 
 /** Metadata only — execution happens in the main process via ToolLoopAgent. */
-const PHASE_2_TOOLS: ToolDescriptor[] = [
+const TOOL_DESCRIPTORS: ToolDescriptor[] = [
   {
     name: 'wiskbot.time.now.v1',
     risk: 'read',
@@ -120,6 +122,24 @@ const PHASE_2_TOOLS: ToolDescriptor[] = [
     name: 'wiskbot.browser.screenshot.v1',
     risk: 'read',
     description: 'Save a screenshot of the managed tab locally',
+    approval: 'ask'
+  },
+  {
+    name: 'wiskbot.memory.save.v1',
+    risk: 'write',
+    description: 'Save a user preference or fact',
+    approval: 'ask'
+  },
+  {
+    name: 'wiskbot.memory.recall.v1',
+    risk: 'read',
+    description: 'Search enabled user memories',
+    approval: 'allow-once'
+  },
+  {
+    name: 'wiskbot.skill.invoke.v1',
+    risk: 'external',
+    description: 'Load a local skill\'s instructions',
     approval: 'ask'
   }
 ]
@@ -303,7 +323,7 @@ export function registerIpcHandlers(): void {
     }
   })
 
-  handle('tools.list', () => PHASE_2_TOOLS)
+  handle('tools.list', () => TOOL_DESCRIPTORS)
 
   handle('permissions.get', () => getSettings().permissionDefaults)
 
@@ -324,6 +344,26 @@ export function registerIpcHandlers(): void {
         detailJson: row.detailJson
       }))
   )
+
+  handle('memory.list', () => listMemories())
+
+  handle('memory.upsert', (payload) => saveMemory(payload))
+
+  handle('memory.delete', (payload) => ({ removed: deleteMemory(payload.id) }))
+
+  handle('memory.setEnabled', (payload) => {
+    const record = setMemoryEnabled(payload.id, payload.enabled)
+    if (!record) throw new Error('Memory not found.')
+    return record
+  })
+
+  handle('skills.list', () => listSkills())
+
+  handle('skills.setEnabled', (payload) => {
+    const record = setSkillEnabled(payload.id, payload.enabled)
+    if (!record) throw new Error('Skill not found.')
+    return record
+  })
 
   handle('browser.status', () => getBrowserManager().getStatus())
 

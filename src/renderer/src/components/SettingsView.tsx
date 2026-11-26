@@ -1,7 +1,9 @@
-import { useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { Check, Trash2 } from 'lucide-react'
 import type {
   Language,
+  MemoryKind,
+  MemoryRecord,
   PermissionDefaults,
   PermissionMode,
   ProviderDefinitionPublic,
@@ -9,11 +11,12 @@ import type {
   ProviderPublic,
   ProviderUpsert,
   RiskLevel,
-  Settings
+  Settings,
+  SkillRecord
 } from '../../../shared/ipc'
 import { translate, type TranslationKey } from '../lib/i18n'
 import { Button } from './ui/button'
-import { Input } from './ui/input'
+import { Input, Textarea } from './ui/input'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from './ui/card'
 import {
   Dialog,
@@ -27,6 +30,12 @@ import {
 
 const MODES: PermissionMode[] = ['deny', 'ask', 'allow-once', 'allow-session', 'allow-always']
 const RISKS: RiskLevel[] = ['read', 'write', 'external', 'destructive']
+const MEMORY_KINDS: MemoryKind[] = ['preference', 'fact', 'instruction', 'imported', 'project']
+const TONES: Settings['tone'][] = ['concise', 'friendly', 'formal']
+
+function shortText(value: string, max = 120): string {
+  return value.length > max ? `${value.slice(0, max)}…` : value
+}
 
 interface FormState {
   id?: string
@@ -96,6 +105,7 @@ interface SettingsViewProps {
   definitions: ProviderDefinitionPublic[]
   onLanguage: (language: Language) => void
   onPermissions: (defaults: PermissionDefaults) => void
+  onTone: (tone: Settings['tone']) => void
   onRefresh: () => void
   onError: (message: string) => void
 }
@@ -107,6 +117,7 @@ export function SettingsView({
   definitions,
   onLanguage,
   onPermissions,
+  onTone,
   onRefresh,
   onError
 }: SettingsViewProps) {
@@ -121,7 +132,76 @@ export function SettingsView({
   const [restartMessage, setRestartMessage] = useState('')
   const [resetOpen, setResetOpen] = useState(false)
   const [resetMessage, setResetMessage] = useState('')
+  const [memories, setMemories] = useState<MemoryRecord[]>([])
+  const [skills, setSkills] = useState<SkillRecord[]>([])
+  const [memoryKind, setMemoryKind] = useState<MemoryKind>('preference')
+  const [memoryContent, setMemoryContent] = useState('')
+  const [memoryMessage, setMemoryMessage] = useState('')
   const t = (key: TranslationKey) => translate(language, key)
+
+  const refreshData = useCallback(async () => {
+    try {
+      const [nextMemories, nextSkills] = await Promise.all([
+        window.wiskbot.send('memory.list'),
+        window.wiskbot.send('skills.list')
+      ])
+      setMemories(nextMemories)
+      setSkills(nextSkills)
+    } catch (cause) {
+      onError(String(cause))
+    }
+  }, [onError])
+
+  useEffect(() => {
+    void refreshData()
+  }, [refreshData])
+
+  const saveMemory = async () => {
+    const content = memoryContent.trim()
+    if (!content) {
+      setMemoryMessage(t('memory.contentRequired'))
+      return
+    }
+    try {
+      await window.wiskbot.send('memory.upsert', {
+        kind: memoryKind,
+        content,
+        source: 'settings'
+      })
+      setMemoryContent('')
+      setMemoryMessage(t('memory.saved'))
+      await refreshData()
+    } catch (cause) {
+      setMemoryMessage(`${t('settings.testFailure')}: ${String(cause)}`)
+    }
+  }
+
+  const setMemoryEnabled = async (id: string, enabled: boolean) => {
+    try {
+      await window.wiskbot.send('memory.setEnabled', { id, enabled })
+      await refreshData()
+    } catch (cause) {
+      onError(String(cause))
+    }
+  }
+
+  const deleteMemory = async (id: string) => {
+    try {
+      await window.wiskbot.send('memory.delete', { id })
+      await refreshData()
+    } catch (cause) {
+      onError(String(cause))
+    }
+  }
+
+  const setSkillEnabled = async (id: string, enabled: boolean) => {
+    try {
+      await window.wiskbot.send('skills.setEnabled', { id, enabled })
+      await refreshData()
+    } catch (cause) {
+      onError(String(cause))
+    }
+  }
 
   const selectedDefinition = definitions.find((item) => item.kind === form.kind)
 
@@ -551,6 +631,165 @@ export function SettingsView({
               <option value="fr">Français</option>
               <option value="ar">العربية</option>
             </select>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader>
+            <CardTitle>{t('tone.title')}</CardTitle>
+            <CardDescription>{t('tone.help')}</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <select
+              className="h-9 rounded-md border border-input bg-background px-2"
+              value={settings.tone}
+              onChange={(event) => onTone(event.target.value as Settings['tone'])}
+              aria-label={t('tone.title')}
+            >
+              {TONES.map((tone) => (
+                <option key={tone} value={tone}>
+                  {t(`tone.${tone}` as TranslationKey)}
+                </option>
+              ))}
+            </select>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader>
+            <CardTitle>{t('memory.title')}</CardTitle>
+            <CardDescription>{t('memory.help')}</CardDescription>
+          </CardHeader>
+          <CardContent className="flex flex-col gap-3">
+            {memories.length === 0 && (
+              <p className="text-sm text-muted-foreground">{t('memory.none')}</p>
+            )}
+            {memories.map((memory) => (
+              <div
+                key={memory.id}
+                className="flex flex-wrap items-center gap-2 rounded-md border border-border p-3"
+              >
+                <div className="min-w-40 flex-1">
+                  <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+                    <span className="rounded border border-border bg-muted px-1.5 py-0.5">
+                      {t(`memory.kind.${memory.kind}` as TranslationKey)}
+                    </span>
+                    <span dir="auto">{shortText(memory.content)}</span>
+                    {!memory.trusted && (
+                      <span className="rounded border border-destructive bg-destructive/10 px-1.5 py-0.5 text-destructive">
+                        {t('memory.untrusted')}
+                      </span>
+                    )}
+                  </div>
+                  <div className="mt-1 text-xs text-muted-foreground">
+                    {t('memory.source')}: {memory.source ?? t('memory.noSource')}
+                  </div>
+                </div>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => void setMemoryEnabled(memory.id, !memory.enabled)}
+                >
+                  {memory.enabled ? t('memory.disable') : t('memory.enable')}
+                </Button>
+                <Button
+                  type="button"
+                  variant="destructive"
+                  size="sm"
+                  onClick={() => void deleteMemory(memory.id)}
+                >
+                  {t('memory.delete')}
+                </Button>
+              </div>
+            ))}
+            <div className="flex flex-col gap-2 rounded-md border border-border p-3">
+              <div className="flex flex-wrap items-end gap-2">
+                <label className="flex flex-col gap-1 text-sm">
+                  {t('memory.kind')}
+                  <select
+                    className="h-9 rounded-md border border-input bg-background px-2"
+                    value={memoryKind}
+                    onChange={(event) => setMemoryKind(event.target.value as MemoryKind)}
+                    aria-label={t('memory.kind')}
+                  >
+                    {MEMORY_KINDS.map((kind) => (
+                      <option key={kind} value={kind}>
+                        {t(`memory.kind.${kind}` as TranslationKey)}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label className="flex flex-1 flex-col gap-1 text-sm">
+                  {t('memory.content')}
+                  <Textarea
+                    value={memoryContent}
+                    maxLength={4096}
+                    placeholder={t('memory.contentPlaceholder')}
+                    onChange={(event) => setMemoryContent(event.target.value)}
+                    aria-label={t('memory.content')}
+                  />
+                </label>
+              </div>
+              <div className="flex flex-wrap items-center gap-2">
+                <Button type="button" onClick={() => void saveMemory()}>
+                  {t('memory.add')}
+                </Button>
+                {memoryMessage && (
+                  <p className="text-sm text-muted-foreground">{memoryMessage}</p>
+                )}
+              </div>
+              <p className="text-xs text-muted-foreground">{t('memory.chatSourceNote')}</p>
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader>
+            <CardTitle>{t('skills.title')}</CardTitle>
+            <CardDescription>{t('skills.help')}</CardDescription>
+          </CardHeader>
+          <CardContent className="flex flex-col gap-3">
+            {skills.length === 0 && (
+              <p className="text-sm text-muted-foreground">{t('skills.none')}</p>
+            )}
+            {skills.map((skill) => (
+              <div
+                key={skill.id}
+                className="flex flex-wrap items-start gap-2 rounded-md border border-border p-3"
+              >
+                <div className="min-w-40 flex-1">
+                  <div className="flex flex-wrap items-center gap-2 font-medium">
+                    <span dir="auto">{skill.name}</span>
+                    <span className="text-xs font-normal text-muted-foreground">
+                      {t('skills.version')}: {skill.version}
+                    </span>
+                  </div>
+                  <div className="mt-1 text-sm" dir="auto">{skill.description}</div>
+                  <div className="mt-1 text-xs text-muted-foreground" dir="auto">
+                    {t('skills.whenToUse')}: {skill.whenToUse}
+                  </div>
+                  <div className="mt-1 text-xs text-muted-foreground">
+                    {t('skills.scopes')}:{' '}
+                    {skill.requiredScopes.length > 0
+                      ? skill.requiredScopes.join(', ')
+                      : t('skills.noScopes')}
+                  </div>
+                  <div className="mt-1 text-xs text-muted-foreground">
+                    {t('skills.maxSteps')}: {skill.maxSteps} · {t('skills.path')}: {skill.path}
+                  </div>
+                </div>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => void setSkillEnabled(skill.id, !skill.enabled)}
+                >
+                  {skill.enabled ? t('skills.disable') : t('skills.enable')}
+                </Button>
+              </div>
+            ))}
+            <p className="text-xs text-muted-foreground">{t('skills.markdownOnly')}</p>
           </CardContent>
         </Card>
 

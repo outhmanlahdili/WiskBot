@@ -8,7 +8,8 @@ export const DEFAULT_SETTINGS: Settings = {
   language: 'en',
   permissionDefaults: { ...DEFAULT_PERMISSION_DEFAULTS },
   allowedFsRoots: [],
-  browserDomains: []
+  browserDomains: [],
+  tone: 'concise'
 }
 
 let cached: Settings | null = null
@@ -31,7 +32,8 @@ function load(): Settings {
         ...((stored.permissionDefaults as object) ?? {})
       },
       allowedFsRoots: Array.isArray(stored.allowedFsRoots) ? stored.allowedFsRoots : [],
-      browserDomains: Array.isArray(stored.browserDomains) ? stored.browserDomains : []
+      browserDomains: Array.isArray(stored.browserDomains) ? stored.browserDomains : [],
+      tone: stored.tone ?? DEFAULT_SETTINGS.tone
     })
   } catch (error) {
     logger.warn('settings', 'Stored settings were invalid; defaults were used.', {
@@ -51,7 +53,8 @@ export function updateSettings(patch: Partial<Settings>): Settings {
       ...(patch.permissionDefaults ?? {})
     },
     allowedFsRoots: patch.allowedFsRoots ?? current.allowedFsRoots,
-    browserDomains: patch.browserDomains ?? current.browserDomains
+    browserDomains: patch.browserDomains ?? current.browserDomains,
+    tone: patch.tone ?? current.tone
   })
 
   ensureUserDataDir()

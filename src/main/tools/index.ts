@@ -8,8 +8,10 @@ import { SNAPSHOT_LIMIT_BYTES } from '../../shared/browser'
 import { canonicalizeWithinRoot, isInside, resolveBrowserUrl } from '../allowlist'
 import { writeAuditEvent } from '../audit'
 import type { BrowserControl } from '../browser-worker/manager'
+import { recallMemories, saveMemory } from '../memory'
 import { hasSessionGrant } from '../permissions'
 import { redactSecrets } from '../redaction'
+import { invokeSkill } from '../skills'
 
 export const MAX_LIST_ENTRIES = 200
 export const MAX_READ_BYTES = 64 * 1024
@@ -35,6 +37,9 @@ export type ApprovalKind =
   | 'browser-write'
   | 'browser-type'
   | 'browser-screenshot'
+  | 'memory-write'
+  | 'memory-read'
+  | 'skill-invoke'
 
 export interface ToolMeta {
   name: string
@@ -55,6 +60,22 @@ const FILL_SCHEMA = z
     selector: z.string().trim().min(1).max(500),
     value: z.string().max(4000)
   })
+  .strict()
+const MEMORY_SAVE_TOOL_SCHEMA = z
+  .object({
+    kind: z.enum(['preference', 'fact', 'instruction', 'imported', 'project']),
+    content: z.string().trim().min(1).max(4096)
+  })
+  .strict()
+const MEMORY_RECALL_TOOL_SCHEMA = z
+  .object({
+    /** Empty string recalls all enabled memories. */
+    query: z.string().trim().max(200),
+    limit: z.number().int().min(1).max(8)
+  })
+  .strict()
+const SKILL_INVOKE_SCHEMA = z
+  .object({ skillId: z.string().regex(/^[a-zA-Z0-9_-]{1,64}$/) })
   .strict()
 
 function resolveReadPath(rawPath: string, ctx: ToolRunContext): string {
@@ -204,6 +225,37 @@ export const TOOL_META: Record<string, ToolMeta> = {
     approval: 'browser-screenshot',
     resolve: (_input, ctx) => browserHost(ctx),
     preview: browserScreenshotPreview
+  },
+  'wiskbot.memory.save.v1': {
+    name: 'wiskbot.memory.save.v1',
+    risk: 'write',
+    description: 'Save a user preference or fact',
+    scope: 'user memory (local only)',
+    approval: 'memory-write',
+    resolve: (input) => String(input.kind ?? 'memory'),
+    preview: (input) => `Save a ${String(input.kind ?? 'memory')} in local memory (source: chat).`
+  },
+  'wiskbot.memory.recall.v1': {
+    name: 'wiskbot.memory.recall.v1',
+    risk: 'read',
+    description: 'Search enabled user memories',
+    scope: 'enabled user memories',
+    approval: 'memory-read',
+    resolve: () => 'enabled memories',
+    preview: (input) => `Search enabled memories for: ${String(input.query ?? '(all)')}`
+  },
+  'wiskbot.skill.invoke.v1': {
+    name: 'wiskbot.skill.invoke.v1',
+    risk: 'external',
+    description: 'Load a local skill\'s instructions for the agent to follow',
+    scope: 'local skills (Markdown only)',
+    approval: 'skill-invoke',
+    resolve: (input) => {
+      const id = String(input.skillId ?? '')
+      return /^[a-zA-Z0-9_-]{1,64}$/.test(id) ? id : 'blocked: invalid skill id'
+    },
+    preview: (_input, target) =>
+      `Load the Markdown instructions of skill ${target}. No scripts are executed.`
   }
 }
 
@@ -368,6 +420,49 @@ export function createTools(ctx: ToolRunContext): ToolSet {
     }
   })
 
+  const memorySave = tool({
+    description: TOOL_META['wiskbot.memory.save.v1'].description,
+    inputSchema: MEMORY_SAVE_TOOL_SCHEMA,
+    execute: async ({ kind, content }) => {
+      const record = saveMemory({ kind, content, source: 'chat' })
+      auditTool(ctx, 'wiskbot.memory.save.v1', 'allow', { id: record.id, kind })
+      return { id: record.id, kind: record.kind, saved: true }
+    }
+  })
+
+  const memoryRecall = tool({
+    description: TOOL_META['wiskbot.memory.recall.v1'].description,
+    inputSchema: MEMORY_RECALL_TOOL_SCHEMA,
+    execute: async ({ query, limit }) => {
+      const result = recallMemories(query, limit)
+      auditTool(ctx, 'wiskbot.memory.recall.v1', 'allow', {
+        query: query ?? '',
+        results: result.results.length
+      })
+      return {
+        untrustedMemoryContent: true,
+        results: result.results,
+        truncated: result.truncated
+      }
+    }
+  })
+
+  const skillInvoke = tool({
+    description: TOOL_META['wiskbot.skill.invoke.v1'].description,
+    inputSchema: SKILL_INVOKE_SCHEMA,
+    execute: async ({ skillId }) => {
+      // Re-validate the concrete target and declared scopes inside execute.
+      const skill = invokeSkill(skillId, Object.keys(TOOL_META))
+      auditTool(ctx, 'wiskbot.skill.invoke.v1', 'allow', { skillId, version: skill.version })
+      return {
+        untrustedSkillInstructions: true,
+        name: skill.name,
+        version: skill.version,
+        instructions: skill.instructions
+      }
+    }
+  })
+
   return {
     'wiskbot.time.now.v1': timeNow,
     'wiskbot.fs.list.v1': fsList,
@@ -376,7 +471,10 @@ export function createTools(ctx: ToolRunContext): ToolSet {
     'wiskbot.browser.snapshot.v1': browserSnapshot,
     'wiskbot.browser.click.v1': browserClick,
     'wiskbot.browser.type.v1': browserType,
-    'wiskbot.browser.screenshot.v1': browserScreenshot
+    'wiskbot.browser.screenshot.v1': browserScreenshot,
+    'wiskbot.memory.save.v1': memorySave,
+    'wiskbot.memory.recall.v1': memoryRecall,
+    'wiskbot.skill.invoke.v1': skillInvoke
   }
 }
 
@@ -419,6 +517,10 @@ export function toolNeedsApproval(
       }
       break
     }
+    case 'memory-read':
+      return { status: 'auto-approved', reason: 'Enabled memories are low-risk local data.', ...base }
+    case 'memory-write':
+      return { status: 'user-approval', reason: 'Saving a memory requires approval.', ...base }
     case 'browser-type':
       // Always ask. A secret-looking selector is refused inside execute.
       break
