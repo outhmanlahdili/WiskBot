@@ -53,7 +53,9 @@ Owner: Session 1 · Status: active · Last updated: 2026-11-26
 - [ ] Human takeover path for sign-in / CAPTCHA / 2FA, with credentials typed by the app and never shown to the model
 - [ ] Visible "managed browser" indicator, step-by-step activity log and immediate stop control
 
-**Exit:** a user can ask the assistant to perform a multi-step task on an allowlisted site, with approvals, take over for a sensitive step, and inspect what happened. No use of the user's real logged-in browser profile. Prompt to be written when Phase 2 is accepted.
+**Status: verification follow-up required (2026-11-26).** Implementation is present and internally consistent, but the GUI smoke script did not exercise the screenshot tool end-to-end, and the `fill_run_done` flag was a counting artifact. Phase 3b (`docs/PROMPTS/03b-browser-screenshot-verification.md`) must confirm both before Phase 4.
+
+**Expected exit:** a user can ask the assistant to perform a multi-step task on an allowlisted site, with approvals, take over for a sensitive step, capture a screenshot, and inspect what happened. No use of the user's real logged-in browser profile.
 
 ## Phase 4 — Memory, preferences, skills
 

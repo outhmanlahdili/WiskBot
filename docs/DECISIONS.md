@@ -48,6 +48,9 @@ Status legend: **accepted** (implement as written) · **proposed** (needs valida
 | ADR-041 | `fs.list` prompts on first resolved target, then session grant | accepted | Safer than silent listing and satisfies the GUI approval requirement; `TOOL-CATALOG.md` corrected to match | If users find repeated first-target prompts excessive, consider a per-root grant |
 | ADR-042 | Denied calls are stored as tool results with a denial reason | accepted | Keeps replayed `ModelMessage[]` history valid across the second model call and later compaction | Never |
 | ADR-043 | Pending approvals and session grants stay in memory | accepted | Signing secret is deliberately not persisted; an app restart drops pending approvals, which fails closed | If users need durable approvals, design explicit persistence with the same secret protection |
+| ADR-044 | Model-supplied CSS selectors are capped and must match exactly one element | accepted | 500-char limit, exact-one locator match, no `page.evaluate()` with model input; selectors are not script execution | If selector-based attacks appear, move to accessibility-tree refs only |
+| ADR-045 | Secret-looking tool input may remain in signed SDK history | accepted with mitigation | The model already generated the value; signed `responseMessages` cannot be rewritten. Chat, audit details and previews are sanitised, and the tool refuses the field. Never place real user secrets in tool input | If a real secret ever reaches the model, rotate it — app never asks for secrets |
+| ADR-046 | Phase 3 requires a screenshot + fill end-to-end smoke before acceptance | accepted | Implementation/type checks are not enough for a user-visible tool; Phase 3b prompt written | Never |
 | ADR-017 | Telemetry disabled by default; no user-data upload | accepted | Local-first and privacy promises | Only with opt-in and a documented policy |
 
 ## Security decisions that must not be relaxed silently
