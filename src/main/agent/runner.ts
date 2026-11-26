@@ -15,6 +15,7 @@ import type { ApprovalDecision, ChatEvent, RiskLevel, Settings } from '../../sha
 import { approvals, messages, toolCalls, type WiskBotDatabase } from '../database'
 import { writeAuditEvent } from '../audit'
 import type { BrowserControl } from '../browser-worker/manager'
+import type { DesktopControl } from '../desktop-worker/manager'
 import { buildMemoryIndex, type MemoryIndexEntry } from '../memory'
 import { getUserDataDir } from '../paths'
 import { grantSession } from '../permissions'
@@ -67,6 +68,7 @@ export interface AgentDeps {
   model: LanguageModel
   approvalSecret: string
   browser?: BrowserControl
+  desktop?: DesktopControl
   skillsDir?: string
   emit: (event: ChatEvent) => void
 }
@@ -326,6 +328,7 @@ export async function runAgent(params: {
     settings: deps.settings,
     ownDirs: deps.ownDirs,
     browser: deps.browser,
+    desktop: deps.desktop,
     skillsDir: deps.skillsDir ?? getUserDataDir(),
     emit: deps.emit,
     abortSignal: controller.signal

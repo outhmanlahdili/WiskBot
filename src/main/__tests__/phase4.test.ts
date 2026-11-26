@@ -90,7 +90,8 @@ beforeEach(() => {
     },
     allowedFsRoots: [],
     browserDomains: [],
-    tone: 'concise'
+    tone: 'concise',
+    desktopWindowTitles: []
   }
 })
 

@@ -8,7 +8,9 @@ import { SNAPSHOT_LIMIT_BYTES } from '../../shared/browser'
 import { canonicalizeWithinRoot, isInside, resolveBrowserUrl } from '../allowlist'
 import { writeAuditEvent } from '../audit'
 import type { BrowserControl } from '../browser-worker/manager'
+import type { DesktopControl } from '../desktop-worker/manager'
 import { recallMemories, saveMemory } from '../memory'
+import { getUserDataDir } from '../paths'
 import { hasSessionGrant } from '../permissions'
 import { redactSecrets } from '../redaction'
 import { invokeSkill } from '../skills'
@@ -24,10 +26,13 @@ export interface ToolRunContext {
   ownDirs: string[]
   emit: (event: ChatEvent) => void
   abortSignal?: AbortSignal
-  /** Injected by main; absent in unit tests that do not exercise browser tools. */
+  /** Injected by main; absent in unit tests that do not exercise worker tools. */
   browser?: BrowserControl
+  desktop?: DesktopControl
   /** Base user-data dir for skill files; defaults to the real profile in main. */
   skillsDir?: string
+  /** Where desktop screenshots are saved; defaults to the real profile in main. */
+  screenshotDir?: string
 }
 
 export type ApprovalKind =
@@ -42,6 +47,8 @@ export type ApprovalKind =
   | 'memory-write'
   | 'memory-read'
   | 'skill-invoke'
+  | 'desktop-read'
+  | 'desktop-write'
 
 export interface ToolMeta {
   name: string
@@ -78,6 +85,28 @@ const MEMORY_RECALL_TOOL_SCHEMA = z
   .strict()
 const SKILL_INVOKE_SCHEMA = z
   .object({ skillId: z.string().regex(/^[a-zA-Z0-9_-]{1,64}$/) })
+  .strict()
+const WINDOW_TITLE_SCHEMA = z.object({ title: z.string().trim().min(1).max(300) }).strict()
+const WINDOW_TYPE_SCHEMA = z
+  .object({
+    title: z.string().trim().min(1).max(300),
+    selector: z.string().trim().min(1).max(300),
+    value: z.string().max(4000)
+  })
+  .strict()
+const WINDOW_CLICK_SCHEMA = z
+  .object({
+    title: z.string().trim().min(1).max(300),
+    /** Automation id or name; use `id=`/`name=` prefixes for an exact match. */
+    selector: z.string().trim().max(300),
+    /** When set, click this screen point instead of invoking the element. */
+    point: z
+      .object({
+        x: z.number().int().min(0).max(10000),
+        y: z.number().int().min(0).max(10000)
+      })
+      .nullable()
+  })
   .strict()
 
 function resolveReadPath(rawPath: string, ctx: ToolRunContext): string {
@@ -246,6 +275,55 @@ export const TOOL_META: Record<string, ToolMeta> = {
     resolve: () => 'enabled memories',
     preview: (input) => `Search enabled memories for: ${String(input.query ?? '(all)')}`
   },
+  'wiskbot.desktop.tree.v1': {
+    name: 'wiskbot.desktop.tree.v1',
+    risk: 'read',
+    description: 'Read a bounded UI Automation tree of an allowlisted window',
+    scope: 'allowlisted Windows desktop windows',
+    approval: 'desktop-read',
+    resolve: (input, ctx) => resolveWindowTitle(input, ctx),
+    preview: (_input, target) =>
+      `Read a bounded accessibility tree of window "${target}". Element names are untrusted data.`
+  },
+  'wiskbot.desktop.activate.v1': {
+    name: 'wiskbot.desktop.activate.v1',
+    risk: 'write',
+    description: 'Focus an allowlisted window',
+    scope: 'allowlisted Windows desktop windows',
+    approval: 'desktop-write',
+    resolve: (input, ctx) => resolveWindowTitle(input, ctx),
+    preview: (_input, target) => `Focus the allowlisted window "${target}" with a visible highlight.`
+  },
+  'wiskbot.desktop.click.v1': {
+    name: 'wiskbot.desktop.click.v1',
+    risk: 'write',
+    description: 'Invoke an element or click a point in an allowlisted window',
+    scope: 'allowlisted Windows desktop windows',
+    approval: 'desktop-write',
+    resolve: (input, ctx) => resolveWindowTitle(input, ctx),
+    preview: (input, target) =>
+      `Invoke ${String(input.selector ?? `point (${String(input.x)}, ${String(input.y)})`)} in "${target}" after a visible highlight.`
+  },
+  'wiskbot.desktop.type.v1': {
+    name: 'wiskbot.desktop.type.v1',
+    risk: 'write',
+    description: 'Set text with ValuePattern in an allowlisted window',
+    scope: 'allowlisted Windows desktop windows',
+    approval: 'desktop-write',
+    resolve: (input, ctx) => resolveWindowTitle(input, ctx),
+    preview: (input, target) =>
+      `Set a value on ${String(input.selector ?? '')} in "${target}". Password fields are refused.`
+  },
+  'wiskbot.desktop.screenshot.v1': {
+    name: 'wiskbot.desktop.screenshot.v1',
+    risk: 'read',
+    description: 'Save a screenshot of an allowlisted window locally',
+    scope: 'allowlisted Windows desktop windows',
+    approval: 'desktop-write',
+    resolve: (input, ctx) => resolveWindowTitle(input, ctx),
+    preview: (_input, target) =>
+      `Capture window "${target}" with a visible indicator; only a local path is returned.`
+  },
   'wiskbot.skill.invoke.v1': {
     name: 'wiskbot.skill.invoke.v1',
     risk: 'external',
@@ -267,6 +345,23 @@ function auditTool(ctx: ToolRunContext, toolName: string, decision: string, inpu
     toolCallId: ctx.toolCallId,
     input
   })
+}
+
+function resolveWindowTitle(input: Record<string, unknown>, ctx: ToolRunContext): string {
+  const title = String(input.title ?? '')
+  if (!title) return '(no window)'
+  if (!ctx.settings.desktopWindowTitles.includes(title)) {
+    return `blocked: Window "${title}" is not in the desktop window allowlist.`
+  }
+  return title
+}
+
+async function requireDesktop(ctx: ToolRunContext): Promise<DesktopControl> {
+  if (!ctx.desktop) {
+    throw new Error('Desktop control is not available on this device.')
+  }
+  await ctx.desktop.waitUntilReady()
+  return ctx.desktop
 }
 
 async function requireBrowser(ctx: ToolRunContext): Promise<BrowserControl> {
@@ -422,6 +517,108 @@ export function createTools(ctx: ToolRunContext): ToolSet {
     }
   })
 
+  const desktopTree = tool({
+    description: TOOL_META['wiskbot.desktop.tree.v1'].description,
+    inputSchema: WINDOW_TITLE_SCHEMA,
+    execute: async ({ title }) => {
+      const resolved = resolveWindowTitle({ title }, ctx)
+      if (resolved.startsWith('blocked:')) throw new Error(resolved.slice(8))
+      const desktop = await requireDesktop(ctx)
+      const result = await desktop.tree(title)
+      auditTool(ctx, 'wiskbot.desktop.tree.v1', 'allow', { title, nodes: result.nodes.length })
+      return {
+        untrustedDesktopData: true,
+        title,
+        nodes: result.nodes,
+        truncated: result.truncated
+      }
+    }
+  })
+
+  const desktopActivate = tool({
+    description: TOOL_META['wiskbot.desktop.activate.v1'].description,
+    inputSchema: WINDOW_TITLE_SCHEMA,
+    execute: async ({ title }) => {
+      const resolved = resolveWindowTitle({ title }, ctx)
+      if (resolved.startsWith('blocked:')) throw new Error(resolved.slice(8))
+      const desktop = await requireDesktop(ctx)
+      const result = await desktop.activate(title)
+      auditTool(ctx, 'wiskbot.desktop.activate.v1', 'allow', { title })
+      return result
+    }
+  })
+
+  const desktopClick = tool({
+    description: TOOL_META['wiskbot.desktop.click.v1'].description,
+    inputSchema: WINDOW_CLICK_SCHEMA,
+    execute: async ({ title, selector, point }) => {
+      const resolved = resolveWindowTitle({ title }, ctx)
+      if (resolved.startsWith('blocked:')) throw new Error(resolved.slice(8))
+      if (!selector && !point) throw new Error('Provide an element selector or a point to click.')
+      const desktop = await requireDesktop(ctx)
+      if (point) {
+        const result = await desktop.clickPoint(title, point.x, point.y)
+        auditTool(ctx, 'wiskbot.desktop.click.v1', 'allow', { title, x: point.x, y: point.y })
+        return result
+      }
+      if (looksLikeSecretSelector(selector)) {
+        return { refused: true, reason: 'Refusing to invoke a password or secret control.' }
+      }
+      try {
+        const result = await desktop.invoke(title, selector)
+        auditTool(ctx, 'wiskbot.desktop.click.v1', 'allow', { title, selector })
+        return result
+      } catch (error) {
+        const reason = error instanceof Error ? error.message : String(error)
+        auditTool(ctx, 'wiskbot.desktop.click.v1', 'deny', { title, selector, reason })
+        return { refused: true, reason }
+      }
+    }
+  })
+
+  const desktopType = tool({
+    description: TOOL_META['wiskbot.desktop.type.v1'].description,
+    inputSchema: WINDOW_TYPE_SCHEMA,
+    execute: async ({ title, selector, value }) => {
+      const resolved = resolveWindowTitle({ title }, ctx)
+      if (resolved.startsWith('blocked:')) throw new Error(resolved.slice(8))
+      if (looksLikeSecretSelector(selector)) {
+        return {
+          refused: true,
+          reason: 'This looks like a secret field. Enter it yourself with Take over.'
+        }
+      }
+      const desktop = await requireDesktop(ctx)
+      try {
+        const result = await desktop.type(title, selector, value)
+        auditTool(ctx, 'wiskbot.desktop.type.v1', 'allow', {
+          title,
+          selector,
+          valueLength: value.length
+        })
+        return result
+      } catch (error) {
+        const reason = error instanceof Error ? error.message : String(error)
+        auditTool(ctx, 'wiskbot.desktop.type.v1', 'deny', { title, selector, reason })
+        return { refused: true, reason }
+      }
+    }
+  })
+
+  const desktopScreenshot = tool({
+    description: TOOL_META['wiskbot.desktop.screenshot.v1'].description,
+    inputSchema: WINDOW_TITLE_SCHEMA,
+    execute: async ({ title }) => {
+      const resolved = resolveWindowTitle({ title }, ctx)
+      if (resolved.startsWith('blocked:')) throw new Error(resolved.slice(8))
+      const desktop = await requireDesktop(ctx)
+      const screenshotDir = ctx.screenshotDir ?? join(getUserDataDir(), 'screenshots')
+      const result = await desktop.screenshot(title, screenshotDir)
+      auditTool(ctx, 'wiskbot.desktop.screenshot.v1', 'allow', { title, bytes: result.bytes })
+      return { path: result.path, bytes: result.bytes }
+    }
+  })
+
   const memorySave = tool({
     description: TOOL_META['wiskbot.memory.save.v1'].description,
     inputSchema: MEMORY_SAVE_TOOL_SCHEMA,
@@ -476,7 +673,12 @@ export function createTools(ctx: ToolRunContext): ToolSet {
     'wiskbot.browser.screenshot.v1': browserScreenshot,
     'wiskbot.memory.save.v1': memorySave,
     'wiskbot.memory.recall.v1': memoryRecall,
-    'wiskbot.skill.invoke.v1': skillInvoke
+    'wiskbot.skill.invoke.v1': skillInvoke,
+    'wiskbot.desktop.tree.v1': desktopTree,
+    'wiskbot.desktop.activate.v1': desktopActivate,
+    'wiskbot.desktop.click.v1': desktopClick,
+    'wiskbot.desktop.type.v1': desktopType,
+    'wiskbot.desktop.screenshot.v1': desktopScreenshot
   }
 }
 
@@ -519,6 +721,13 @@ export function toolNeedsApproval(
       }
       break
     }
+    case 'desktop-read':
+      if (hasSessionGrant(ctx.conversationId, toolName, target)) {
+        return { status: 'auto-approved', reason: 'Window already granted for this session.', ...base }
+      }
+      break
+    case 'desktop-write':
+      return { status: 'user-approval', reason: 'Desktop actions require explicit approval.', ...base }
     case 'memory-read':
       return { status: 'auto-approved', reason: 'Enabled memories are low-risk local data.', ...base }
     case 'memory-write':

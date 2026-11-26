@@ -130,6 +130,9 @@ export function SettingsView({
   const [domainInput, setDomainInput] = useState('')
   const [domainMessage, setDomainMessage] = useState('')
   const [restartMessage, setRestartMessage] = useState('')
+  const [titleInput, setTitleInput] = useState('')
+  const [titleMessage, setTitleMessage] = useState('')
+  const [desktopRestartMessage, setDesktopRestartMessage] = useState('')
   const [resetOpen, setResetOpen] = useState(false)
   const [resetMessage, setResetMessage] = useState('')
   const [memories, setMemories] = useState<MemoryRecord[]>([])
@@ -341,6 +344,43 @@ export function SettingsView({
       setRestartMessage(result.restarted ? t('browser.restarted') : t('browser.restartError'))
     } catch (error) {
       setRestartMessage(`${t('browser.restartError')}: ${String(error)}`)
+    }
+  }
+
+  const saveTitles = async (titles: string[]) => {
+    try {
+      await window.wiskbot.send('settings.update', { desktopWindowTitles: titles })
+      setTitleMessage('')
+      onRefresh()
+    } catch (error) {
+      setTitleMessage(`${t('settings.testFailure')}: ${String(error)}`)
+    }
+  }
+
+  const addTitle = async () => {
+    const value = titleInput.trim()
+    setTitleInput('')
+    if (!value || value.length > 300) {
+      setTitleMessage(t('desktop.invalidTitle'))
+      return
+    }
+    if (settings.desktopWindowTitles.includes(value)) return
+    await saveTitles([...settings.desktopWindowTitles, value])
+  }
+
+  const removeTitle = async (title: string) => {
+    await saveTitles(settings.desktopWindowTitles.filter((item) => item !== title))
+  }
+
+  const restartDesktop = async () => {
+    setDesktopRestartMessage('')
+    try {
+      const result = await window.wiskbot.send('desktop.restart')
+      setDesktopRestartMessage(
+        result.restarted ? t('desktop.restarted') : t('desktop.restartError')
+      )
+    } catch (error) {
+      setDesktopRestartMessage(`${t('desktop.restartError')}: ${String(error)}`)
     }
   }
 
@@ -586,6 +626,58 @@ export function SettingsView({
               </Button>
               {restartMessage && (
                 <p className="text-sm text-muted-foreground">{restartMessage}</p>
+              )}
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader>
+            <CardTitle>{t('desktop.domains')}</CardTitle>
+            <CardDescription>{t('desktop.help')}</CardDescription>
+          </CardHeader>
+          <CardContent className="flex flex-col gap-3">
+            {settings.desktopWindowTitles.length === 0 && (
+              <p className="text-sm text-muted-foreground">{t('desktop.none')}</p>
+            )}
+            {settings.desktopWindowTitles.map((title) => (
+              <div
+                key={title}
+                className="flex items-center justify-between gap-2 rounded-md border border-border px-3 py-2 text-sm"
+              >
+                <span className="min-w-0 break-all" dir="auto">{title}</span>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => void removeTitle(title)}
+                >
+                  {t('desktop.remove')}
+                </Button>
+              </div>
+            ))}
+            <div className="flex items-end gap-2">
+              <label className="flex flex-1 flex-col gap-1 text-sm">
+                {t('desktop.title')}
+                <Input
+                  value={titleInput}
+                  maxLength={300}
+                  placeholder={t('desktop.titlePlaceholder')}
+                  onChange={(event) => setTitleInput(event.target.value)}
+                  aria-label={t('desktop.title')}
+                />
+              </label>
+              <Button type="button" onClick={() => void addTitle()}>
+                {t('desktop.add')}
+              </Button>
+            </div>
+            {titleMessage && <p className="text-sm text-muted-foreground">{titleMessage}</p>}
+            <div className="flex flex-wrap items-center gap-2">
+              <Button type="button" variant="outline" onClick={() => void restartDesktop()}>
+                {t('desktop.restart')}
+              </Button>
+              {desktopRestartMessage && (
+                <p className="text-sm text-muted-foreground">{desktopRestartMessage}</p>
               )}
             </div>
           </CardContent>

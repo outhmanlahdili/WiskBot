@@ -14,6 +14,7 @@ import {
 } from '../shared/ipc'
 import { APPROVAL_SECRET } from './agent/secret'
 import { BrowserManager } from './browser-worker/manager'
+import { DesktopManager } from './desktop-worker/manager'
 import { cancelRun, respondApproval, runAgent } from './agent/runner'
 import { writeAuditEvent } from './audit'
 import { deleteAllLocalData } from './data'
@@ -141,8 +142,50 @@ const TOOL_DESCRIPTORS: ToolDescriptor[] = [
     risk: 'external',
     description: 'Load a local skill\'s instructions',
     approval: 'ask'
+  },
+  {
+    name: 'wiskbot.desktop.tree.v1',
+    risk: 'read',
+    description: 'Read a bounded UI Automation tree of an allowlisted window',
+    approval: 'ask'
+  },
+  {
+    name: 'wiskbot.desktop.activate.v1',
+    risk: 'write',
+    description: 'Focus an allowlisted window',
+    approval: 'ask'
+  },
+  {
+    name: 'wiskbot.desktop.click.v1',
+    risk: 'write',
+    description: 'Invoke an element or click a point in an allowlisted window',
+    approval: 'ask'
+  },
+  {
+    name: 'wiskbot.desktop.type.v1',
+    risk: 'write',
+    description: 'Set text with ValuePattern in an allowlisted window',
+    approval: 'ask'
+  },
+  {
+    name: 'wiskbot.desktop.screenshot.v1',
+    risk: 'read',
+    description: 'Save a screenshot of an allowlisted window locally',
+    approval: 'ask'
   }
 ]
+
+let desktopManager: DesktopManager | null = null
+
+function getDesktopManager(): DesktopManager {
+  if (!desktopManager) {
+    desktopManager = new DesktopManager({
+      emit: (event) => emitAppEvent({ type: 'chat.event', event }),
+      settings: getSettings
+    })
+  }
+  return desktopManager
+}
 
 let browserManager: BrowserManager | null = null
 
@@ -287,6 +330,8 @@ export function registerIpcHandlers(): void {
       const settings = getSettings()
       const browser = getBrowserManager()
       if (browser.status === 'stopped') browser.start()
+      const desktop = getDesktopManager()
+      if (desktop.status === 'stopped' && settings.desktopWindowTitles.length > 0) desktop.start()
       const dataDir = getUserDataDir()
       void runAgent({
         deps: {
@@ -296,6 +341,7 @@ export function registerIpcHandlers(): void {
           model,
           approvalSecret: APPROVAL_SECRET,
           browser,
+          desktop,
           emit: (event) => emitAppEvent({ type: 'chat.event', event })
         },
         conversationId: payload.conversationId,
@@ -363,6 +409,23 @@ export function registerIpcHandlers(): void {
     const record = setSkillEnabled(payload.id, payload.enabled)
     if (!record) throw new Error('Skill not found.')
     return record
+  })
+
+  handle('desktop.status', () => getDesktopManager().getStatus())
+
+  handle('desktop.takeover', async (payload) => {
+    const result = await getDesktopManager().setPaused(payload.active)
+    return { active: result.paused }
+  })
+
+  handle('desktop.stop', async () => {
+    await getDesktopManager().stop()
+    return { stopped: true }
+  })
+
+  handle('desktop.restart', async () => {
+    const result = await getDesktopManager().restart()
+    return { restarted: result.restarted }
   })
 
   handle('browser.status', () => getBrowserManager().getStatus())

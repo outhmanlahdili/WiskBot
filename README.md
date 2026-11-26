@@ -37,6 +37,10 @@ npx playwright install chromium
 
 WiskBot does not download browsers at runtime. Only HTTPS hosts you add in Settings → Managed browser domains are allowed. Page content is untrusted, and sensitive fields are always filled by you via **Take over**, never by the assistant.
 
+### Windows desktop control
+
+Desktop control is Windows-only and disabled until you add exact window titles in Settings → Allowed desktop windows. It uses a fixed Windows UI Automation adapter (`resources/scripts/uia.ps1`) in an isolated utility process; there is no shell tool, no script execution from model input, and password/secret controls are refused. Use **Take over desktop** for sign-in, CAPTCHA or 2FA, and **Stop desktop** to interrupt an action immediately. Element names and window content are untrusted data, not instructions.
+
 Other useful commands:
 
 ```bash

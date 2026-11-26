@@ -25,6 +25,8 @@ export interface FakeModelOptions {
   getRoot: () => string | undefined
   /** URL used by browser-tool scripts (fixture in tests/smoke). */
   getBrowserUrl?: () => string | undefined
+  /** Allowlisted window title used by desktop-tool scripts. */
+  getDesktopTitle?: () => string | undefined
   /** Optional delay used by cancellation tests and smoke checks. */
   delayMs?: number
   /** Deterministic script override for unit tests. */
@@ -38,6 +40,41 @@ export function createFakeModel(options: FakeModelOptions): LanguageModel {
   const defaultScript = (call: number, text: string, root: string | undefined): LanguageModelV4StreamPart[] => {
     const lower = text.toLowerCase()
     const parts: LanguageModelV4StreamPart[] = [{ type: 'stream-start', warnings: [] }]
+
+    if (
+      lower.includes('desktop tree') ||
+      lower.includes('desktop click') ||
+      lower.includes('desktop type') ||
+      lower.includes('desktop screenshot')
+    ) {
+      const title = options.getDesktopTitle?.() ?? 'Untitled - Notepad'
+      if (call > 1) {
+        parts.push({ type: 'text-start', id: 'txt_desktop_2' })
+        parts.push({ type: 'text-delta', id: 'txt_desktop_2', delta: 'Desktop task completed.' })
+        parts.push({ type: 'text-end', id: 'txt_desktop_2' })
+        parts.push({ type: 'finish', usage, finishReason: { unified: 'stop', raw: 'stop' } })
+        return parts
+      }
+      let toolName = 'wiskbot.desktop.tree.v1'
+      let input: Record<string, unknown> = { title }
+      if (lower.includes('desktop click')) {
+        toolName = 'wiskbot.desktop.click.v1'
+        input = { title, selector: 'name=OK', point: null }
+      } else if (lower.includes('desktop type')) {
+        toolName = 'wiskbot.desktop.type.v1'
+        input = { title, selector: 'name=Text editor', value: 'hello from wiskbot' }
+      } else if (lower.includes('desktop screenshot')) {
+        toolName = 'wiskbot.desktop.screenshot.v1'
+      }
+      parts.push({
+        type: 'tool-call',
+        toolCallId: `fake_desktop_${suffix}_${call}`,
+        toolName,
+        input: JSON.stringify(input)
+      })
+      parts.push({ type: 'finish', usage, finishReason: { unified: 'tool-calls', raw: 'tool_calls' } })
+      return parts
+    }
 
     if (
       lower.includes('memory save') ||
@@ -206,11 +243,12 @@ export function createFakeModel(options: FakeModelOptions): LanguageModel {
 /** Provider used by the app when the user selects the clearly-labelled fake kind. */
 export function createFakeProvider(
   getRoot: () => string | undefined,
-  getBrowserUrl?: () => string | undefined
+  getBrowserUrl?: () => string | undefined,
+  getDesktopTitle?: () => string | undefined
 ) {
   return customProvider({
     languageModels: {
-      'fake-scripted': createFakeModel({ getRoot, getBrowserUrl, delayMs: 80 })
+      'fake-scripted': createFakeModel({ getRoot, getBrowserUrl, getDesktopTitle, delayMs: 80 })
     }
   })
 }

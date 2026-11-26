@@ -20,6 +20,7 @@ interface ChatViewProps {
 
 type ApprovalRequest = Extract<ChatEvent, { event: 'approval-request' }>
 type BrowserStatus = Extract<ChatEvent, { event: 'browser-status' }>['status']
+type DesktopStatus = Extract<ChatEvent, { event: 'desktop-status' }>['status']
 type MemoryContextEntry = Extract<ChatEvent, { event: 'memory-context' }>['entries'][number]
 
 function format(template: string, values: Record<string, string>): string {
@@ -44,6 +45,10 @@ export function ChatView({ language, conversationId, providerId, onError }: Chat
   const [browserUrl, setBrowserUrl] = useState('')
   const [browserMessage, setBrowserMessage] = useState('')
   const [takeoverActive, setTakeoverActive] = useState(false)
+  const [desktopStatus, setDesktopStatus] = useState<DesktopStatus>('stopped')
+  const [desktopTitle, setDesktopTitle] = useState('')
+  const [desktopMessage, setDesktopMessage] = useState('')
+  const [desktopTakeoverActive, setDesktopTakeoverActive] = useState(false)
   const [memoryContext, setMemoryContext] = useState<MemoryContextEntry[] | null>(null)
   const bottomRef = useRef<HTMLDivElement>(null)
   const t = (key: TranslationKey) => translate(language, key)
@@ -94,6 +99,24 @@ export function ChatView({ language, conversationId, providerId, onError }: Chat
   }, [])
 
   useEffect(() => {
+    let cancelled = false
+    void window.wiskbot
+      .send('desktop.status')
+      .then((state) => {
+        if (cancelled) return
+        setDesktopStatus(state.status)
+        setDesktopTitle(state.title ?? '')
+        setDesktopMessage(state.message ?? '')
+      })
+      .catch(() => {
+        // The indicator stays at its default 'stopped' state if the query fails.
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [])
+
+  useEffect(() => {
     return window.wiskbot.onEvent((event) => {
       if (event.type !== 'chat.event') return
       const incoming = event.event
@@ -102,14 +125,25 @@ export function ChatView({ language, conversationId, providerId, onError }: Chat
         setMemoryContext(incoming.entries)
         return
       }
-      if (incoming.event === 'browser-status' || incoming.event === 'browser-takeover') {
+      if (
+        incoming.event === 'browser-status' ||
+        incoming.event === 'browser-takeover' ||
+        incoming.event === 'desktop-status' ||
+        incoming.event === 'desktop-takeover'
+      ) {
         if (incoming.conversationId && incoming.conversationId !== conversationId) return
         if (incoming.event === 'browser-status') {
           setBrowserStatus(incoming.status)
           setBrowserUrl(incoming.url ?? '')
           setBrowserMessage(incoming.message ?? '')
-        } else {
+        } else if (incoming.event === 'browser-takeover') {
           setTakeoverActive(incoming.active)
+        } else if (incoming.event === 'desktop-status') {
+          setDesktopStatus(incoming.status)
+          setDesktopTitle(incoming.title ?? '')
+          setDesktopMessage(incoming.message ?? '')
+        } else {
+          setDesktopTakeoverActive(incoming.active)
         }
       } else if (incoming.conversationId !== conversationId) {
         return
@@ -141,7 +175,7 @@ export function ChatView({ language, conversationId, providerId, onError }: Chat
 
   const send = async () => {
     const value = text.trim()
-    if (!value || busy || takeoverActive || !providerId) return
+    if (!value || busy || takeoverActive || desktopTakeoverActive || !providerId) return
     setText('')
     setLocalUserMessages((current) => [...current, value])
     setBusy(true)
@@ -183,6 +217,27 @@ export function ChatView({ language, conversationId, providerId, onError }: Chat
       await window.wiskbot.send('browser.stop')
       setBrowserStatus('stopped')
       setBrowserUrl('')
+    } catch (error) {
+      onError(String(error))
+    }
+  }
+
+  const toggleDesktopTakeover = async () => {
+    const active = !desktopTakeoverActive
+    try {
+      await window.wiskbot.send('desktop.takeover', { active })
+      setDesktopTakeoverActive(active)
+    } catch (error) {
+      onError(String(error))
+    }
+  }
+
+  const stopDesktop = async () => {
+    try {
+      await window.wiskbot.send('desktop.stop')
+      setDesktopStatus('stopped')
+      setDesktopTitle('')
+      setDesktopMessage('')
     } catch (error) {
       onError(String(error))
     }
@@ -403,6 +458,23 @@ export function ChatView({ language, conversationId, providerId, onError }: Chat
             {part.message && <span dir="auto"> · {part.message}</span>}
           </div>
         )
+      case 'desktop-status':
+        return (
+          <div key={index} className="rounded-md border border-border bg-muted/40 px-3 py-2 text-xs text-muted-foreground">
+            {format(t('desktop.indicator'), {
+              status: t(`desktop.status.${part.status}` as TranslationKey)
+            })}
+            {part.title && <span dir="auto"> · {format(t('desktop.window'), { title: part.title })}</span>}
+            {part.message && <span dir="auto"> · {part.message}</span>}
+          </div>
+        )
+      case 'desktop-takeover':
+        return (
+          <div key={index} className="rounded-md border border-primary bg-primary/5 px-3 py-2 text-xs">
+            {part.active ? t('desktop.takeoverLine') : t('desktop.resumeLine')}
+            {part.message && <span dir="auto"> · {part.message}</span>}
+          </div>
+        )
     }
   }
 
@@ -429,6 +501,19 @@ export function ChatView({ language, conversationId, providerId, onError }: Chat
             {(browserStatus !== 'stopped' || busy) && (
               <Button type="button" size="sm" variant="outline" onClick={() => void stopBrowser()}>
                 {t('browser.stop')}
+              </Button>
+            )}
+            <Button
+              type="button"
+              size="sm"
+              variant={desktopTakeoverActive ? 'default' : 'outline'}
+              onClick={() => void toggleDesktopTakeover()}
+            >
+              {desktopTakeoverActive ? t('desktop.resume') : t('desktop.takeover')}
+            </Button>
+            {desktopStatus !== 'stopped' && (
+              <Button type="button" size="sm" variant="outline" onClick={() => void stopDesktop()}>
+                {t('desktop.stop')}
               </Button>
             )}
           </div>
@@ -458,6 +543,42 @@ export function ChatView({ language, conversationId, providerId, onError }: Chat
           )}
         </div>
         <p className="mt-1 text-xs text-muted-foreground">{t('browser.untrusted')}</p>
+        {desktopStatus === 'busy' && (
+          <div
+            className="mt-2 flex flex-wrap items-center gap-2 rounded-md border border-destructive bg-destructive/10 px-3 py-2 text-xs text-destructive"
+            role="status"
+          >
+            <span className="h-2 w-2 animate-pulse rounded-full bg-destructive" aria-hidden="true" />
+            <span className="font-medium">{t('desktop.controlling')}</span>
+            {desktopTitle && (
+              <span className="min-w-0 break-words" dir="auto">
+                {format(t('desktop.window'), { title: desktopTitle })}
+              </span>
+            )}
+          </div>
+        )}
+        <div className="mt-2 flex flex-wrap items-center gap-2 rounded-md border border-border bg-muted/40 px-2 py-1.5 text-xs">
+          <span className="rounded border border-border bg-background px-1.5 py-0.5 font-medium">
+            {format(t('desktop.indicator'), {
+              status: t(`desktop.status.${desktopStatus}` as TranslationKey)
+            })}
+          </span>
+          {desktopTitle && (
+            <span
+              className="min-w-0 max-w-full truncate text-muted-foreground"
+              dir="auto"
+              title={desktopTitle}
+            >
+              {format(t('desktop.window'), { title: desktopTitle })}
+            </span>
+          )}
+          {desktopMessage && (
+            <span className="min-w-0 break-words text-muted-foreground" dir="auto">
+              {desktopMessage}
+            </span>
+          )}
+        </div>
+        <p className="mt-1 text-xs text-muted-foreground">{t('desktop.untrusted')}</p>
       </header>
 
       <div className="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto px-6 py-4">
@@ -540,10 +661,18 @@ export function ChatView({ language, conversationId, providerId, onError }: Chat
             {t('browser.takeoverHelp')}
           </div>
         )}
+        {desktopTakeoverActive && (
+          <div
+            className="mx-auto mb-2 max-w-3xl rounded-md border border-primary bg-primary/5 px-3 py-2 text-xs text-primary"
+            role="status"
+          >
+            {t('desktop.takeoverHelp')}
+          </div>
+        )}
         <div className="mx-auto flex max-w-3xl items-end gap-2">
           <Textarea
             value={text}
-            disabled={takeoverActive}
+            disabled={takeoverActive || desktopTakeoverActive}
             onChange={(event) => setText(event.target.value)}
             onKeyDown={(event) => {
               if (event.key === 'Enter' && !event.shiftKey) {
@@ -556,7 +685,7 @@ export function ChatView({ language, conversationId, providerId, onError }: Chat
           />
           <Button
             type="button"
-            disabled={busy || takeoverActive || !providerId}
+            disabled={busy || takeoverActive || desktopTakeoverActive || !providerId}
             onClick={() => void send()}
             aria-label={t('chat.send')}
           >

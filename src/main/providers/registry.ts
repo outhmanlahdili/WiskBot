@@ -145,7 +145,8 @@ export async function getModelForProvider(id: string): Promise<LanguageModel> {
         }
         const domain = getSettings().browserDomains[0]
         return domain ? `https://${domain}/` : undefined
-      }
+      },
+      () => getSettings().desktopWindowTitles[0]
     ).languageModel('fake-scripted')
   }
 

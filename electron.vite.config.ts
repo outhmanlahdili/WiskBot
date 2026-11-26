@@ -10,7 +10,8 @@ export default defineConfig({
       rollupOptions: {
         input: {
           index: resolve('src/main/index.ts'),
-          'browser-worker/index': resolve('src/main/browser-worker/index.ts')
+          'browser-worker/index': resolve('src/main/browser-worker/index.ts'),
+          'desktop-worker/index': resolve('src/main/desktop-worker/index.ts')
         }
       }
     }

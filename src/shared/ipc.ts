@@ -34,7 +34,9 @@ export const SettingsSchema = z
     /** Exact hosts the managed browser may navigate to (Phase 3). */
     browserDomains: z.array(z.string().min(1)).max(64),
     /** Assistant tone used in system instructions (Phase 4). */
-    tone: z.enum(['concise', 'friendly', 'formal'])
+    tone: z.enum(['concise', 'friendly', 'formal']),
+    /** Exact window titles the desktop worker may control (Phase 5). */
+    desktopWindowTitles: z.array(z.string().min(1)).max(32)
   })
   .strict()
 export type Settings = z.infer<typeof SettingsSchema>
@@ -254,6 +256,19 @@ export const ChatEventSchema = z.discriminatedUnion('event', [
     message: z.string().optional()
   }),
   z.object({
+    event: z.literal('desktop-status'),
+    conversationId: z.string().optional(),
+    status: z.enum(['starting', 'ready', 'busy', 'paused', 'error', 'stopped']),
+    title: z.string().optional(),
+    message: z.string().optional()
+  }),
+  z.object({
+    event: z.literal('desktop-takeover'),
+    conversationId: z.string().optional(),
+    active: z.boolean(),
+    message: z.string().optional()
+  }),
+  z.object({
     event: z.literal('memory-context'),
     conversationId: z.string().optional(),
     entries: z.array(
@@ -300,6 +315,10 @@ export const IpcRequestSchemas = {
   'memory.setEnabled': MemorySetEnabledSchema,
   'skills.list': z.void(),
   'skills.setEnabled': SkillSetEnabledSchema,
+  'desktop.status': z.void(),
+  'desktop.takeover': z.object({ active: z.boolean() }).strict(),
+  'desktop.stop': z.void(),
+  'desktop.restart': z.void(),
   'app.deleteLocalData': z.void(),
   'app.resetKeyStore': z.object({ confirmed: z.literal(true) }).strict()
 } as const satisfies Record<string, z.ZodType>
@@ -401,6 +420,14 @@ export interface IpcResultMap {
   'memory.setEnabled': MemoryRecord
   'skills.list': SkillRecord[]
   'skills.setEnabled': SkillRecord
+  'desktop.status': {
+    status: 'starting' | 'ready' | 'busy' | 'paused' | 'error' | 'stopped'
+    title?: string
+    message?: string
+  }
+  'desktop.takeover': { active: boolean }
+  'desktop.stop': { stopped: boolean }
+  'desktop.restart': { restarted: boolean }
   'app.deleteLocalData': { deleted: boolean }
   'app.resetKeyStore': { reset: boolean }
 }
