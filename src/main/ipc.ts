@@ -13,6 +13,7 @@ import {
   type ToolDescriptor
 } from '../shared/ipc'
 import { APPROVAL_SECRET } from './agent/secret'
+import { BrowserManager } from './browser-worker/manager'
 import { cancelRun, respondApproval, runAgent } from './agent/runner'
 import { writeAuditEvent } from './audit'
 import { deleteAllLocalData } from './data'
@@ -90,8 +91,50 @@ const PHASE_2_TOOLS: ToolDescriptor[] = [
     risk: 'read',
     description: 'Read a text file in an allowlisted directory',
     approval: 'ask'
+  },
+  {
+    name: 'wiskbot.browser.open.v1',
+    risk: 'external',
+    description: 'Open an allowlisted URL in the managed browser',
+    approval: 'ask'
+  },
+  {
+    name: 'wiskbot.browser.snapshot.v1',
+    risk: 'read',
+    description: 'Read a bounded, untrusted snapshot of the managed tab',
+    approval: 'allow-once'
+  },
+  {
+    name: 'wiskbot.browser.click.v1',
+    risk: 'write',
+    description: 'Click one resolved locator in the managed tab',
+    approval: 'ask'
+  },
+  {
+    name: 'wiskbot.browser.type.v1',
+    risk: 'write',
+    description: 'Fill a non-secret field in the managed tab',
+    approval: 'ask'
+  },
+  {
+    name: 'wiskbot.browser.screenshot.v1',
+    risk: 'read',
+    description: 'Save a screenshot of the managed tab locally',
+    approval: 'ask'
   }
 ]
+
+let browserManager: BrowserManager | null = null
+
+function getBrowserManager(): BrowserManager {
+  if (!browserManager) {
+    browserManager = new BrowserManager({
+      emit: (event) => emitAppEvent({ type: 'chat.event', event }),
+      settings: getSettings
+    })
+  }
+  return browserManager
+}
 
 export function registerIpcHandlers(): void {
   handle('settings.get', () => getSettings())
@@ -222,6 +265,8 @@ export function registerIpcHandlers(): void {
     try {
       const model = await getModelForProvider(payload.providerId)
       const settings = getSettings()
+      const browser = getBrowserManager()
+      if (browser.status === 'stopped') browser.start()
       const dataDir = getUserDataDir()
       void runAgent({
         deps: {
@@ -230,6 +275,7 @@ export function registerIpcHandlers(): void {
           ownDirs: [join(dataDir, 'memory'), join(dataDir, 'skills')],
           model,
           approvalSecret: APPROVAL_SECRET,
+          browser,
           emit: (event) => emitAppEvent({ type: 'chat.event', event })
         },
         conversationId: payload.conversationId,
@@ -278,6 +324,23 @@ export function registerIpcHandlers(): void {
         detailJson: row.detailJson
       }))
   )
+
+  handle('browser.status', () => getBrowserManager().getStatus())
+
+  handle('browser.takeover', async (payload) => {
+    const result = await getBrowserManager().setPaused(payload.active)
+    return { active: result.paused }
+  })
+
+  handle('browser.stop', async () => {
+    await getBrowserManager().stop()
+    return { stopped: true }
+  })
+
+  handle('browser.restart', async () => {
+    const result = await getBrowserManager().restart()
+    return { restarted: result.restarted }
+  })
 
   handle('app.deleteLocalData', async () => deleteAllLocalData())
 

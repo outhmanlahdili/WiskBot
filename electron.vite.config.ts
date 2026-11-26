@@ -4,7 +4,17 @@ import react from '@vitejs/plugin-react'
 import tailwindcss from '@tailwindcss/vite'
 
 export default defineConfig({
-  main: {},
+  main: {
+    build: {
+      // The browser utility process needs its own bundle, separate from main.
+      rollupOptions: {
+        input: {
+          index: resolve('src/main/index.ts'),
+          'browser-worker/index': resolve('src/main/browser-worker/index.ts')
+        }
+      }
+    }
+  },
   // Sandboxed preload scripts cannot use ESM imports; emit a self-contained CJS bundle.
   preload: {
     build: {

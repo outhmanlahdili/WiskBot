@@ -80,6 +80,56 @@ function isLoopback(host: string): boolean {
   return host === 'localhost' || host === '127.0.0.1' || host === '::1' || host === '[::1]'
 }
 
+export type BrowserUrlResult =
+  | { ok: true; url: string; host: string }
+  | { ok: false; reason: string }
+
+/**
+ * Resolve and validate a browser navigation target. Production allows only
+ * HTTPS to an explicitly listed host. Test mode (WISKBOT_TEST_MODE=1) also
+ * permits loopback HTTP and local file:// fixtures.
+ */
+export function resolveBrowserUrl(
+  raw: string,
+  allowedHosts: Iterable<string>,
+  testMode = process.env['WISKBOT_TEST_MODE'] === '1'
+): BrowserUrlResult {
+  let parsed: URL
+  try {
+    parsed = new URL(raw)
+  } catch {
+    return { ok: false, reason: 'Enter a valid URL.' }
+  }
+
+  if (parsed.protocol === 'file:') {
+    if (!testMode) return { ok: false, reason: 'file:// URLs are not allowed.' }
+    return { ok: true, url: parsed.href, host: 'file' }
+  }
+
+  if (parsed.protocol !== 'https:' && parsed.protocol !== 'http:') {
+    return { ok: false, reason: 'Only HTTPS URLs are allowed.' }
+  }
+
+  const host = canonicalHost(parsed.hostname)
+  if (!host) return { ok: false, reason: 'URL has no host.' }
+
+  if (parsed.protocol === 'http:') {
+    if (!testMode || !isLoopback(host)) {
+      return { ok: false, reason: 'HTTP is only allowed for loopback test fixtures.' }
+    }
+    return { ok: true, url: parsed.href, host }
+  }
+
+  if (!testMode && isLoopback(host)) {
+    return { ok: false, reason: 'Loopback hosts are not available in normal use.' }
+  }
+
+  for (const entry of allowedHosts) {
+    if (canonicalHost(entry) === host) return { ok: true, url: parsed.href, host }
+  }
+  return { ok: false, reason: `Domain "${host}" is not in the browser allowlist.` }
+}
+
 /** Used by the window's external-link handler. */
 export function allowExternalHttps(url: string, allowedHosts: Iterable<string>): string | null {
   let parsed: URL

@@ -19,6 +19,7 @@ interface ChatViewProps {
 }
 
 type ApprovalRequest = Extract<ChatEvent, { event: 'approval-request' }>
+type BrowserStatus = Extract<ChatEvent, { event: 'browser-status' }>['status']
 
 function format(template: string, values: Record<string, string>): string {
   return template.replace(/\{(\w+)\}/g, (_match, key: string) => values[key] ?? '')
@@ -38,6 +39,10 @@ export function ChatView({ language, conversationId, providerId, onError }: Chat
   const [text, setText] = useState('')
   const [busy, setBusy] = useState(false)
   const [notice, setNotice] = useState('')
+  const [browserStatus, setBrowserStatus] = useState<BrowserStatus>('stopped')
+  const [browserUrl, setBrowserUrl] = useState('')
+  const [browserMessage, setBrowserMessage] = useState('')
+  const [takeoverActive, setTakeoverActive] = useState(false)
   const bottomRef = useRef<HTMLDivElement>(null)
   const t = (key: TranslationKey) => translate(language, key)
 
@@ -68,10 +73,39 @@ export function ChatView({ language, conversationId, providerId, onError }: Chat
   }, [conversationId, onError])
 
   useEffect(() => {
+    let cancelled = false
+    void window.wiskbot
+      .send('browser.status')
+      .then((state) => {
+        if (cancelled) return
+        setBrowserStatus(state.status)
+        setBrowserUrl(state.url ?? '')
+        setBrowserMessage(state.message ?? '')
+      })
+      .catch(() => {
+        // The indicator stays at its default 'stopped' state if the query fails.
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [])
+
+  useEffect(() => {
     return window.wiskbot.onEvent((event) => {
       if (event.type !== 'chat.event') return
       const incoming = event.event
-      if (incoming.conversationId !== conversationId) return
+      if (incoming.event === 'browser-status' || incoming.event === 'browser-takeover') {
+        if (incoming.conversationId && incoming.conversationId !== conversationId) return
+        if (incoming.event === 'browser-status') {
+          setBrowserStatus(incoming.status)
+          setBrowserUrl(incoming.url ?? '')
+          setBrowserMessage(incoming.message ?? '')
+        } else {
+          setTakeoverActive(incoming.active)
+        }
+      } else if (incoming.conversationId !== conversationId) {
+        return
+      }
       setParts((current) => {
         if (
           incoming.event === 'approval-response' &&
@@ -99,7 +133,7 @@ export function ChatView({ language, conversationId, providerId, onError }: Chat
 
   const send = async () => {
     const value = text.trim()
-    if (!value || busy || !providerId) return
+    if (!value || busy || takeoverActive || !providerId) return
     setText('')
     setLocalUserMessages((current) => [...current, value])
     setBusy(true)
@@ -121,6 +155,26 @@ export function ChatView({ language, conversationId, providerId, onError }: Chat
     try {
       await window.wiskbot.send('chat.cancel', { conversationId })
       setBusy(false)
+    } catch (error) {
+      onError(String(error))
+    }
+  }
+
+  const toggleTakeover = async () => {
+    const active = !takeoverActive
+    try {
+      await window.wiskbot.send('browser.takeover', { active })
+      setTakeoverActive(active)
+    } catch (error) {
+      onError(String(error))
+    }
+  }
+
+  const stopBrowser = async () => {
+    try {
+      await window.wiskbot.send('browser.stop')
+      setBrowserStatus('stopped')
+      setBrowserUrl('')
     } catch (error) {
       onError(String(error))
     }
@@ -317,6 +371,23 @@ export function ChatView({ language, conversationId, providerId, onError }: Chat
             {t('chat.error')}: <span dir="auto">{part.message}</span>
           </div>
         )
+      case 'browser-status':
+        return (
+          <div key={index} className="rounded-md border border-border bg-muted/40 px-3 py-2 text-xs text-muted-foreground">
+            {format(t('browser.indicator'), {
+              status: t(`browser.status.${part.status}` as TranslationKey)
+            })}
+            {part.url && <span dir="auto"> · {part.url}</span>}
+            {part.message && <span dir="auto"> · {part.message}</span>}
+          </div>
+        )
+      case 'browser-takeover':
+        return (
+          <div key={index} className="rounded-md border border-primary bg-primary/5 px-3 py-2 text-xs">
+            {part.active ? t('browser.takeoverLine') : t('browser.resumeLine')}
+            {part.message && <span dir="auto"> · {part.message}</span>}
+          </div>
+        )
     }
   }
 
@@ -329,10 +400,49 @@ export function ChatView({ language, conversationId, providerId, onError }: Chat
   return (
     <div className="flex h-full flex-col">
       <header className="border-b border-border px-6 py-4">
-        <h1 className="text-lg font-semibold">{t('chat.title')}</h1>
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <h1 className="text-lg font-semibold">{t('chat.title')}</h1>
+          <div className="flex flex-wrap items-center gap-2">
+            <Button
+              type="button"
+              size="sm"
+              variant={takeoverActive ? 'default' : 'outline'}
+              onClick={() => void toggleTakeover()}
+            >
+              {takeoverActive ? t('browser.resume') : t('browser.takeover')}
+            </Button>
+            {(browserStatus !== 'stopped' || busy) && (
+              <Button type="button" size="sm" variant="outline" onClick={() => void stopBrowser()}>
+                {t('browser.stop')}
+              </Button>
+            )}
+          </div>
+        </div>
         {!providerId && (
           <p className="mt-1 text-xs text-muted-foreground">{t('chat.noProvider')}</p>
         )}
+        <div className="mt-2 flex flex-wrap items-center gap-2 rounded-md border border-border bg-muted/40 px-2 py-1.5 text-xs">
+          <span className="rounded border border-border bg-background px-1.5 py-0.5 font-medium">
+            {format(t('browser.indicator'), {
+              status: t(`browser.status.${browserStatus}` as TranslationKey)
+            })}
+          </span>
+          {browserUrl && (
+            <span
+              className="min-w-0 max-w-full truncate text-muted-foreground"
+              dir="auto"
+              title={browserUrl}
+            >
+              {browserUrl}
+            </span>
+          )}
+          {browserMessage && (
+            <span className="min-w-0 break-words text-muted-foreground" dir="auto">
+              {browserMessage}
+            </span>
+          )}
+        </div>
+        <p className="mt-1 text-xs text-muted-foreground">{t('browser.untrusted')}</p>
       </header>
 
       <div className="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto px-6 py-4">
@@ -383,9 +493,18 @@ export function ChatView({ language, conversationId, providerId, onError }: Chat
       </div>
 
       <div className="border-t border-border p-4">
+        {takeoverActive && (
+          <div
+            className="mx-auto mb-2 max-w-3xl rounded-md border border-primary bg-primary/5 px-3 py-2 text-xs text-primary"
+            role="status"
+          >
+            {t('browser.takeoverHelp')}
+          </div>
+        )}
         <div className="mx-auto flex max-w-3xl items-end gap-2">
           <Textarea
             value={text}
+            disabled={takeoverActive}
             onChange={(event) => setText(event.target.value)}
             onKeyDown={(event) => {
               if (event.key === 'Enter' && !event.shiftKey) {
@@ -398,7 +517,7 @@ export function ChatView({ language, conversationId, providerId, onError }: Chat
           />
           <Button
             type="button"
-            disabled={busy || !providerId}
+            disabled={busy || takeoverActive || !providerId}
             onClick={() => void send()}
             aria-label={t('chat.send')}
           >

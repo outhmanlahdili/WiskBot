@@ -91,7 +91,8 @@ beforeEach(() => {
       external: 'ask',
       destructive: 'ask'
     },
-    allowedFsRoots: [root]
+    allowedFsRoots: [root],
+    browserDomains: []
   }
   events = []
 })

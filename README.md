@@ -2,7 +2,7 @@
 
 WiskBot is a free, open-source, BYOK, local-first Windows desktop AI assistant built with Electron, React, and TypeScript.
 
-WiskBot is in **early development (Phase 1 foundation)**. It is not yet a finished product: browser automation and an agent loop are not implemented yet. Expect rough edges and breaking changes.
+WiskBot is in **early development**. The chat agent, approval flow, local tools and a managed browser are implemented; memory, skills, scheduled tasks and desktop control are still planned. Expect rough edges and breaking changes.
 
 ## Principles
 
@@ -26,6 +26,16 @@ npm run dev
 ```
 
 `npm run rebuild` is required because `better-sqlite3` is a native module: its ABI must match the Electron runtime. Rebuild it again after changing the Electron version.
+
+### Browser automation setup
+
+The managed browser is an isolated Playwright Chromium profile at `%APPDATA%\WiskBot\browser-profile`. It never uses your own logged-in browser. Install the browser once during development:
+
+```bash
+npx playwright install chromium
+```
+
+WiskBot does not download browsers at runtime. Only HTTPS hosts you add in Settings → Managed browser domains are allowed. Page content is untrusted, and sensitive fields are always filled by you via **Take over**, never by the assistant.
 
 Other useful commands:
 

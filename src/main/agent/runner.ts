@@ -14,10 +14,12 @@ import { asc, eq } from 'drizzle-orm'
 import type { ApprovalDecision, ChatEvent, RiskLevel, Settings } from '../../shared/ipc'
 import { approvals, messages, toolCalls, type WiskBotDatabase } from '../database'
 import { writeAuditEvent } from '../audit'
+import type { BrowserControl } from '../browser-worker/manager'
 import { grantSession } from '../permissions'
 import { safeErrorMessage } from '../redaction'
 import {
   createTools,
+  looksLikeSecretSelector,
   newToolCallId,
   TOOL_META,
   toolNeedsApproval,
@@ -41,6 +43,7 @@ export interface AgentDeps {
   ownDirs: string[]
   model: LanguageModel
   approvalSecret: string
+  browser?: BrowserControl
   emit: (event: ChatEvent) => void
 }
 
@@ -64,10 +67,24 @@ interface PendingApproval {
 interface RunState {
   controller: AbortController
   denied: Set<string>
+  /** Tool calls the user has already approved manually in this run. */
+  approvedCalls: Set<string>
 }
 
 const pending = new Map<string, PendingApproval>()
 const runs = new Map<string, RunState>()
+
+/** Never echo a value destined for a secret-looking field into chat or storage. */
+function sanitizeToolInput(toolName: string, input: Record<string, unknown>): Record<string, unknown> {
+  if (
+    toolName === 'wiskbot.browser.type.v1' &&
+    looksLikeSecretSelector(String(input.selector ?? '')) &&
+    'value' in input
+  ) {
+    return { ...input, value: '[hidden]' }
+  }
+  return input
+}
 
 function textContent(text: string): Array<{ type: 'text'; text: string }> {
   return [{ type: 'text', text }]
@@ -221,6 +238,9 @@ function createAgent(deps: AgentDeps, ctx: ToolRunContext, tools: ToolSet, run: 
       }
     },
     toolApproval: ({ toolCall }) => {
+      // A manual decision already exists for this call; do not re-evaluate it
+      // on the second generation or the SDK will skip execution.
+      if (run.approvedCalls.has(toolCall.toolCallId)) return 'user-approval'
       const toolName = toolCall.toolName
       const input = (toolCall.input ?? {}) as Record<string, unknown>
       const decision = toolNeedsApproval(toolName, input, ctx)
@@ -267,7 +287,7 @@ export async function runAgent(params: {
   const { deps, conversationId, text } = params
   const db = deps.db
   const controller = new AbortController()
-  const run: RunState = { controller, denied: new Set() }
+  const run: RunState = { controller, denied: new Set(), approvedCalls: new Set() }
   runs.set(conversationId, run)
 
   const ctx: ToolRunContext = {
@@ -275,6 +295,7 @@ export async function runAgent(params: {
     toolCallId: '',
     settings: deps.settings,
     ownDirs: deps.ownDirs,
+    browser: deps.browser,
     emit: deps.emit,
     abortSignal: controller.signal
   }
@@ -304,7 +325,7 @@ export async function runAgent(params: {
             break
           case 'tool-call': {
             ctx.toolCallId = part.toolCallId
-            const input = (part.input ?? {}) as Record<string, unknown>
+            const input = sanitizeToolInput(part.toolName, (part.input ?? {}) as Record<string, unknown>)
             const meta = TOOL_META[part.toolName]
             const target = meta ? meta.resolve(input, ctx) : '(unknown)'
             const risk = meta?.risk ?? 'read'
@@ -326,7 +347,10 @@ export async function runAgent(params: {
             let resolve!: (decision: ApprovalDecision) => void
             const promise = new Promise<ApprovalDecision>((r) => { resolve = r })
             const meta = TOOL_META[part.toolCall.toolName]
-            const input = (part.toolCall.input ?? {}) as Record<string, unknown>
+            const input = sanitizeToolInput(
+              part.toolCall.toolName,
+              (part.toolCall.input ?? {}) as Record<string, unknown>
+            )
             const item: PendingApproval = {
               approvalId: part.approvalId,
               toolCallId: part.toolCall.toolCallId,
@@ -453,7 +477,10 @@ export async function runAgent(params: {
         })
         if (decision === 'deny') {
           run.denied.add(`${item.toolName}|${item.target}`)
-        } else if (decision === 'allow-session') {
+        } else {
+          run.approvedCalls.add(item.toolCallId)
+        }
+        if (decision === 'allow-session') {
           grantSession(conversationId, item.toolName, item.target)
         }
         responses.push({

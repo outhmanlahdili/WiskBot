@@ -136,7 +136,17 @@ export async function getModelForProvider(id: string): Promise<LanguageModel> {
   if (!row.enabled) throw new Error('This provider is disabled.')
 
   if (row.kind === 'fake') {
-    return createFakeProvider(() => getSettings().allowedFsRoots[0]).languageModel('fake-scripted')
+    return createFakeProvider(
+      () => getSettings().allowedFsRoots[0],
+      () => {
+        // Test fixtures are loopback-only and require WISKBOT_TEST_MODE=1.
+        if (process.env['WISKBOT_TEST_MODE'] === '1') {
+          return 'http://127.0.0.1:7788/fixture.html'
+        }
+        const domain = getSettings().browserDomains[0]
+        return domain ? `https://${domain}/` : undefined
+      }
+    ).languageModel('fake-scripted')
   }
 
   const definition = getDefinition(row.kind as ProviderKind)

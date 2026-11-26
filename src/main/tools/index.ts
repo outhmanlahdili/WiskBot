@@ -4,13 +4,16 @@ import { join } from 'node:path'
 import { tool, type ToolSet } from 'ai'
 import { z } from 'zod'
 import type { ChatEvent, RiskLevel, Settings } from '../../shared/ipc'
-import { canonicalizeWithinRoot, isInside } from '../allowlist'
+import { SNAPSHOT_LIMIT_BYTES } from '../../shared/browser'
+import { canonicalizeWithinRoot, isInside, resolveBrowserUrl } from '../allowlist'
 import { writeAuditEvent } from '../audit'
+import type { BrowserControl } from '../browser-worker/manager'
 import { hasSessionGrant } from '../permissions'
 import { redactSecrets } from '../redaction'
 
 export const MAX_LIST_ENTRIES = 200
 export const MAX_READ_BYTES = 64 * 1024
+export const MAX_SNAPSHOT_BYTES = SNAPSHOT_LIMIT_BYTES
 
 export interface ToolRunContext {
   conversationId: string
@@ -19,9 +22,19 @@ export interface ToolRunContext {
   ownDirs: string[]
   emit: (event: ChatEvent) => void
   abortSignal?: AbortSignal
+  /** Injected by main; absent in unit tests that do not exercise browser tools. */
+  browser?: BrowserControl
 }
 
-export type ApprovalKind = 'none' | 'ask-first-target' | 'own-read-auto'
+export type ApprovalKind =
+  | 'none'
+  | 'ask-first-target'
+  | 'own-read-auto'
+  | 'browser-open'
+  | 'browser-read'
+  | 'browser-write'
+  | 'browser-type'
+  | 'browser-screenshot'
 
 export interface ToolMeta {
   name: string
@@ -35,6 +48,14 @@ export interface ToolMeta {
 }
 
 const PATH_SCHEMA = z.object({ path: z.string().trim().min(1).max(1000) }).strict()
+const URL_SCHEMA = z.object({ url: z.string().trim().min(1).max(4000) }).strict()
+const LOCATOR_SCHEMA = z.object({ selector: z.string().trim().min(1).max(500) }).strict()
+const FILL_SCHEMA = z
+  .object({
+    selector: z.string().trim().min(1).max(500),
+    value: z.string().max(4000)
+  })
+  .strict()
 
 function resolveReadPath(rawPath: string, ctx: ToolRunContext): string {
   const roots = [...ctx.settings.allowedFsRoots, ...ctx.ownDirs]
@@ -60,12 +81,55 @@ function resolveForMeta(input: Record<string, unknown>, ctx: ToolRunContext): st
   }
 }
 
+function browserHost(ctx: ToolRunContext): string {
+  const url = ctx.browser?.getStatus().url
+  if (!url) return '(no page)'
+  try {
+    return new URL(url).hostname.toLowerCase()
+  } catch {
+    return '(no page)'
+  }
+}
+
+function resolveBrowserMeta(input: Record<string, unknown>, ctx: ToolRunContext): string {
+  if (typeof input.url !== 'string') return browserHost(ctx)
+  const result = resolveBrowserUrl(input.url, ctx.settings.browserDomains)
+  if (!result.ok) return `blocked: ${result.reason}`
+  return result.host
+}
+
 function listPreview(_input: Record<string, unknown>, target: string): string {
   return `List up to ${MAX_LIST_ENTRIES} entries in ${target}`
 }
 
 function readPreview(_input: Record<string, unknown>, target: string): string {
   return `Read up to ${MAX_READ_BYTES} bytes from ${target} (binary files and detected secrets are redacted)`
+}
+
+function browserOpenPreview(input: Record<string, unknown>, target: string): string {
+  return `Open ${String(input.url ?? '')} in the visible managed browser (host: ${target}). No user profile is used.`
+}
+
+function browserSnapshotPreview(_input: Record<string, unknown>, target: string): string {
+  return `Read a bounded, untrusted accessibility/text snapshot of the managed tab (${target}).`
+}
+
+function browserClickPreview(input: Record<string, unknown>, target: string): string {
+  return `Click the single element matching ${String(input.selector ?? '')} in ${target}.`
+}
+
+function browserTypePreview(input: Record<string, unknown>, target: string): string {
+  const selector = String(input.selector ?? '')
+  if (looksLikeSecretSelector(selector)) {
+    return `Fill ${selector} in ${target}. Value is hidden; enter it yourself with Take over.`
+  }
+  const value = String(input.value ?? '')
+  const preview = value.length > 60 ? `${value.slice(0, 60)}…` : value
+  return `Fill ${selector} in ${target} with: ${preview}`
+}
+
+function browserScreenshotPreview(_input: Record<string, unknown>, target: string): string {
+  return `Capture a screenshot of the managed tab (${target}); saved locally, no image sent to the model.`
 }
 
 export const TOOL_META: Record<string, ToolMeta> = {
@@ -95,15 +159,80 @@ export const TOOL_META: Record<string, ToolMeta> = {
     approval: 'own-read-auto',
     resolve: resolveForMeta,
     preview: readPreview
+  },
+  'wiskbot.browser.open.v1': {
+    name: 'wiskbot.browser.open.v1',
+    risk: 'external',
+    description: 'Open an allowlisted URL in the managed browser',
+    scope: 'managed browser domain allowlist',
+    approval: 'browser-open',
+    resolve: resolveBrowserMeta,
+    preview: browserOpenPreview
+  },
+  'wiskbot.browser.snapshot.v1': {
+    name: 'wiskbot.browser.snapshot.v1',
+    risk: 'read',
+    description: 'Read a bounded, untrusted snapshot of the managed tab',
+    scope: 'managed browser active tab',
+    approval: 'browser-read',
+    resolve: (_input, ctx) => browserHost(ctx),
+    preview: browserSnapshotPreview
+  },
+  'wiskbot.browser.click.v1': {
+    name: 'wiskbot.browser.click.v1',
+    risk: 'write',
+    description: 'Click one resolved locator in the managed tab',
+    scope: 'managed browser active tab',
+    approval: 'browser-write',
+    resolve: (_input, ctx) => browserHost(ctx),
+    preview: browserClickPreview
+  },
+  'wiskbot.browser.type.v1': {
+    name: 'wiskbot.browser.type.v1',
+    risk: 'write',
+    description: 'Fill a non-secret field in the managed tab',
+    scope: 'managed browser active tab',
+    approval: 'browser-type',
+    resolve: (_input, ctx) => browserHost(ctx),
+    preview: browserTypePreview
+  },
+  'wiskbot.browser.screenshot.v1': {
+    name: 'wiskbot.browser.screenshot.v1',
+    risk: 'read',
+    description: 'Save a screenshot of the managed tab locally',
+    scope: 'managed browser active tab',
+    approval: 'browser-screenshot',
+    resolve: (_input, ctx) => browserHost(ctx),
+    preview: browserScreenshotPreview
   }
 }
 
 function auditTool(ctx: ToolRunContext, toolName: string, decision: string, input: unknown): void {
-  writeAuditEvent(
-    'tool.call',
-    toolName,
-    decision,
-    { conversationId: ctx.conversationId, toolCallId: ctx.toolCallId, input }
+  writeAuditEvent('tool.call', toolName, decision, {
+    conversationId: ctx.conversationId,
+    toolCallId: ctx.toolCallId,
+    input
+  })
+}
+
+async function requireBrowser(ctx: ToolRunContext): Promise<BrowserControl> {
+  if (!ctx.browser) {
+    throw new Error('The managed browser is not available. Restart it from Settings.')
+  }
+  await ctx.browser.waitUntilReady()
+  return ctx.browser
+}
+
+async function requireAllowedCurrentPage(ctx: ToolRunContext): Promise<string> {
+  const browser = await requireBrowser(ctx)
+  const result = resolveBrowserUrl(browser.getStatus().url ?? '', ctx.settings.browserDomains)
+  if (!result.ok) throw new Error(result.reason)
+  return result.url
+}
+
+export function looksLikeSecretSelector(selector: string): boolean {
+  return /(password|passphrase|secret|token|api[-_ ]?key|cvv|card.?number|\botp\b|\bpin\b)/i.test(
+    selector
   )
 }
 
@@ -122,7 +251,6 @@ export function createTools(ctx: ToolRunContext): ToolSet {
     description: TOOL_META['wiskbot.fs.list.v1'].description,
     inputSchema: PATH_SCHEMA,
     execute: async ({ path }) => {
-      // Re-check the resolved target inside execute, not just in the policy.
       const resolved = resolveReadPath(path, ctx)
       const stats = statSync(resolved)
       if (!stats.isDirectory()) throw new Error('Target is not a directory.')
@@ -145,25 +273,110 @@ export function createTools(ctx: ToolRunContext): ToolSet {
       const stats = statSync(resolved)
       if (!stats.isFile()) throw new Error('Target is not a file.')
       if (stats.size > MAX_READ_BYTES) {
-        return {
-          content: '',
-          truncated: true,
-          reason: `File exceeds the ${MAX_READ_BYTES} byte limit.`
-        }
+        return { content: '', truncated: true, reason: `File exceeds the ${MAX_READ_BYTES} byte limit.` }
       }
       const buffer = readFileSync(resolved)
-      const isBinary = buffer.includes(0)
-      if (isBinary) return { content: '', truncated: false, reason: 'Binary file; not read.' }
+      if (buffer.includes(0)) return { content: '', truncated: false, reason: 'Binary file; not read.' }
       const content = redactSecrets(buffer.toString('utf8'))
       auditTool(ctx, 'wiskbot.fs.read.v1', 'allow', { path: resolved })
       return { content, truncated: false }
     }
   })
 
+  const browserOpen = tool({
+    description: TOOL_META['wiskbot.browser.open.v1'].description,
+    inputSchema: URL_SCHEMA,
+    execute: async ({ url }) => {
+      // Re-validate the concrete target in execute, not just in the policy.
+      const resolved = resolveBrowserUrl(url, ctx.settings.browserDomains)
+      if (!resolved.ok) throw new Error(resolved.reason)
+      const browser = await requireBrowser(ctx)
+      const result = await browser.open(resolved.url)
+      const finalCheck = resolveBrowserUrl(result.url, ctx.settings.browserDomains)
+      if (!finalCheck.ok) throw new Error(`Final URL was blocked: ${finalCheck.reason}`)
+      auditTool(ctx, 'wiskbot.browser.open.v1', 'allow', { host: resolved.host })
+      return { url: result.url, title: result.title, host: resolved.host }
+    }
+  })
+
+  const browserSnapshot = tool({
+    description: TOOL_META['wiskbot.browser.snapshot.v1'].description,
+    inputSchema: z.object({}).strict(),
+    execute: async () => {
+      await requireAllowedCurrentPage(ctx)
+      const browser = await requireBrowser(ctx)
+      const result = await browser.snapshot()
+      const text = result.text.slice(0, MAX_SNAPSHOT_BYTES)
+      auditTool(ctx, 'wiskbot.browser.snapshot.v1', 'allow', { bytes: Buffer.byteLength(text, 'utf8') })
+      return {
+        untrustedPageContent: true,
+        url: result.url,
+        text,
+        truncated: result.truncated || text.length < result.text.length
+      }
+    }
+  })
+
+  const browserClick = tool({
+    description: TOOL_META['wiskbot.browser.click.v1'].description,
+    inputSchema: LOCATOR_SCHEMA,
+    execute: async ({ selector }) => {
+      await requireAllowedCurrentPage(ctx)
+      const browser = await requireBrowser(ctx)
+      const result = await browser.click(selector)
+      auditTool(ctx, 'wiskbot.browser.click.v1', 'allow', { selector })
+      return result
+    }
+  })
+
+  const browserType = tool({
+    description: TOOL_META['wiskbot.browser.type.v1'].description,
+    inputSchema: FILL_SCHEMA,
+    execute: async ({ selector, value }) => {
+      await requireAllowedCurrentPage(ctx)
+      if (looksLikeSecretSelector(selector)) {
+        return {
+          refused: true,
+          reason: 'This looks like a secret field. Enter it yourself with Take over; the assistant will not type secrets.'
+        }
+      }
+      const browser = await requireBrowser(ctx)
+      try {
+        const result = await browser.fill(selector, value)
+        auditTool(ctx, 'wiskbot.browser.type.v1', 'allow', { selector, valueLength: value.length })
+        return result
+      } catch (error) {
+        const reason = error instanceof Error ? error.message : String(error)
+        auditTool(ctx, 'wiskbot.browser.type.v1', 'deny', { selector, reason })
+        return { refused: true, reason }
+      }
+    }
+  })
+
+  const browserScreenshot = tool({
+    description: TOOL_META['wiskbot.browser.screenshot.v1'].description,
+    inputSchema: z.object({}).strict(),
+    execute: async () => {
+      await requireAllowedCurrentPage(ctx)
+      const browser = await requireBrowser(ctx)
+      const result = await browser.screenshot()
+      auditTool(ctx, 'wiskbot.browser.screenshot.v1', 'allow', {
+        path: result.path,
+        bytes: result.bytes
+      })
+      return { path: result.path, bytes: result.bytes, url: result.url }
+    }
+  })
+
   return {
     'wiskbot.time.now.v1': timeNow,
     'wiskbot.fs.list.v1': fsList,
-    'wiskbot.fs.read.v1': fsRead
+    'wiskbot.fs.read.v1': fsRead,
+    'wiskbot.browser.open.v1': browserOpen,
+    'wiskbot.browser.snapshot.v1': browserSnapshot,
+    'wiskbot.browser.click.v1': browserClick,
+    'wiskbot.browser.type.v1': browserType,
+    'wiskbot.browser.screenshot.v1': browserScreenshot
   }
 }
 
@@ -200,6 +413,18 @@ export function toolNeedsApproval(
       }
       break
     }
+    case 'browser-read': {
+      if (target !== '(no page)' && hasSessionGrant(ctx.conversationId, 'wiskbot.browser.open.v1', target)) {
+        return { status: 'auto-approved', reason: 'Reading an already-granted domain.', ...base }
+      }
+      break
+    }
+    case 'browser-type':
+      // Always ask. A secret-looking selector is refused inside execute.
+      break
+    case 'browser-open':
+    case 'browser-write':
+    case 'browser-screenshot':
     case 'ask-first-target':
       break
   }

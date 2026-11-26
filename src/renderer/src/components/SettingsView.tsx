@@ -54,6 +54,41 @@ function isAbsolutePath(value: string): boolean {
   return /^[A-Za-z]:[\\/]/.test(value) || value.startsWith('/') || value.startsWith('\\\\')
 }
 
+/** Accept only a bare hostname: no scheme, path, port, credentials or dot tricks. */
+function normalizeHostname(value: string): string | null {
+  const host = value.trim().toLowerCase()
+  if (
+    !host ||
+    host.includes('/') ||
+    host.includes('\\') ||
+    /\s/.test(host) ||
+    host.startsWith('.') ||
+    host.endsWith('.') ||
+    host.includes('..') ||
+    host.includes('@') ||
+    host.includes(':')
+  ) {
+    return null
+  }
+  try {
+    const url = new URL(`https://${host}`)
+    if (
+      url.hostname !== host ||
+      url.username ||
+      url.password ||
+      url.port ||
+      url.pathname !== '/' ||
+      url.search ||
+      url.hash
+    ) {
+      return null
+    }
+    return host
+  } catch {
+    return null
+  }
+}
+
 interface SettingsViewProps {
   language: Language
   settings: Settings
@@ -81,6 +116,9 @@ export function SettingsView({
   const [deleteOpen, setDeleteOpen] = useState(false)
   const [folderInput, setFolderInput] = useState('')
   const [folderMessage, setFolderMessage] = useState('')
+  const [domainInput, setDomainInput] = useState('')
+  const [domainMessage, setDomainMessage] = useState('')
+  const [restartMessage, setRestartMessage] = useState('')
   const [resetOpen, setResetOpen] = useState(false)
   const [resetMessage, setResetMessage] = useState('')
   const t = (key: TranslationKey) => translate(language, key)
@@ -189,6 +227,41 @@ export function SettingsView({
 
   const removeFolder = async (root: string) => {
     await saveFolders(settings.allowedFsRoots.filter((item) => item !== root))
+  }
+
+  const saveDomains = async (domains: string[]) => {
+    try {
+      await window.wiskbot.send('settings.update', { browserDomains: domains })
+      setDomainMessage('')
+      onRefresh()
+    } catch (error) {
+      setDomainMessage(`${t('settings.testFailure')}: ${String(error)}`)
+    }
+  }
+
+  const addDomain = async () => {
+    const host = normalizeHostname(domainInput)
+    setDomainInput('')
+    if (!host) {
+      setDomainMessage(t('browser.invalidDomain'))
+      return
+    }
+    if (settings.browserDomains.includes(host)) return
+    await saveDomains([...settings.browserDomains, host])
+  }
+
+  const removeDomain = async (domain: string) => {
+    await saveDomains(settings.browserDomains.filter((item) => item !== domain))
+  }
+
+  const restartBrowser = async () => {
+    setRestartMessage('')
+    try {
+      const result = await window.wiskbot.send('browser.restart')
+      setRestartMessage(result.restarted ? t('browser.restarted') : t('browser.restartError'))
+    } catch (error) {
+      setRestartMessage(`${t('browser.restartError')}: ${String(error)}`)
+    }
   }
 
   const resetKeyStore = async () => {
@@ -384,6 +457,57 @@ export function SettingsView({
               </Button>
             </div>
             {folderMessage && <p className="text-sm text-muted-foreground">{folderMessage}</p>}
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader>
+            <CardTitle>{t('browser.domains')}</CardTitle>
+            <CardDescription>{t('browser.domainsHelp')}</CardDescription>
+          </CardHeader>
+          <CardContent className="flex flex-col gap-3">
+            {settings.browserDomains.length === 0 && (
+              <p className="text-sm text-muted-foreground">{t('browser.domainsNone')}</p>
+            )}
+            {settings.browserDomains.map((domain) => (
+              <div
+                key={domain}
+                className="flex items-center justify-between gap-2 rounded-md border border-border px-3 py-2 text-sm"
+              >
+                <span className="min-w-0 break-all" dir="auto">{domain}</span>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => void removeDomain(domain)}
+                >
+                  {t('browser.removeDomain')}
+                </Button>
+              </div>
+            ))}
+            <div className="flex items-end gap-2">
+              <label className="flex flex-1 flex-col gap-1 text-sm">
+                {t('browser.domains')}
+                <Input
+                  value={domainInput}
+                  onChange={(event) => setDomainInput(event.target.value)}
+                  placeholder={t('browser.domainPlaceholder')}
+                  aria-label={t('browser.domains')}
+                />
+              </label>
+              <Button type="button" onClick={() => void addDomain()}>
+                {t('browser.addDomain')}
+              </Button>
+            </div>
+            {domainMessage && <p className="text-sm text-muted-foreground">{domainMessage}</p>}
+            <div className="flex flex-wrap items-center gap-2">
+              <Button type="button" variant="outline" onClick={() => void restartBrowser()}>
+                {t('browser.restart')}
+              </Button>
+              {restartMessage && (
+                <p className="text-sm text-muted-foreground">{restartMessage}</p>
+              )}
+            </div>
           </CardContent>
         </Card>
 

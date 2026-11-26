@@ -30,7 +30,9 @@ export const SettingsSchema = z
     language: LanguageSchema,
     permissionDefaults: PermissionDefaultsSchema,
     /** Absolute filesystem roots the model may list/read (Phase 2). */
-    allowedFsRoots: z.array(z.string().min(1)).max(32)
+    allowedFsRoots: z.array(z.string().min(1)).max(32),
+    /** Exact hosts the managed browser may navigate to (Phase 3). */
+    browserDomains: z.array(z.string().min(1)).max(64)
   })
   .strict()
 export type Settings = z.infer<typeof SettingsSchema>
@@ -214,6 +216,19 @@ export const ChatEventSchema = z.discriminatedUnion('event', [
     event: z.literal('error'),
     conversationId: z.string().optional(),
     message: z.string()
+  }),
+  z.object({
+    event: z.literal('browser-status'),
+    conversationId: z.string().optional(),
+    status: z.enum(['starting', 'ready', 'busy', 'paused', 'error', 'stopped']),
+    url: z.string().optional(),
+    message: z.string().optional()
+  }),
+  z.object({
+    event: z.literal('browser-takeover'),
+    conversationId: z.string().optional(),
+    active: z.boolean(),
+    message: z.string().optional()
   })
 ])
 export type ChatEvent = z.infer<typeof ChatEventSchema>
@@ -240,6 +255,10 @@ export const IpcRequestSchemas = {
   'tools.list': z.void(),
   'permissions.get': z.void(),
   'audit.list': AuditListSchema,
+  'browser.status': z.void(),
+  'browser.takeover': z.object({ active: z.boolean() }).strict(),
+  'browser.stop': z.void(),
+  'browser.restart': z.void(),
   'app.deleteLocalData': z.void(),
   'app.resetKeyStore': z.object({ confirmed: z.literal(true) }).strict()
 } as const satisfies Record<string, z.ZodType>
@@ -303,6 +322,14 @@ export interface IpcResultMap {
   'tools.list': ToolDescriptor[]
   'permissions.get': PermissionDefaults
   'audit.list': AuditEventRecord[]
+  'browser.status': {
+    status: 'starting' | 'ready' | 'busy' | 'paused' | 'error' | 'stopped'
+    url?: string
+    message?: string
+  }
+  'browser.takeover': { active: boolean }
+  'browser.stop': { stopped: boolean }
+  'browser.restart': { restarted: boolean }
   'app.deleteLocalData': { deleted: boolean }
   'app.resetKeyStore': { reset: boolean }
 }

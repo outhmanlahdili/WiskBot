@@ -23,6 +23,8 @@ function lastUserText(options: LanguageModelV4CallOptions): string {
 export interface FakeModelOptions {
   /** Called at request time so the smoke test can use the configured folder. */
   getRoot: () => string | undefined
+  /** URL used by browser-tool scripts (fixture in tests/smoke). */
+  getBrowserUrl?: () => string | undefined
   /** Optional delay used by cancellation tests and smoke checks. */
   delayMs?: number
   /** Deterministic script override for unit tests. */
@@ -36,6 +38,55 @@ export function createFakeModel(options: FakeModelOptions): LanguageModel {
   const defaultScript = (call: number, text: string, root: string | undefined): LanguageModelV4StreamPart[] => {
     const lower = text.toLowerCase()
     const parts: LanguageModelV4StreamPart[] = [{ type: 'stream-start', warnings: [] }]
+
+    if (
+      lower.includes('browser open') ||
+      lower.includes('browser snapshot') ||
+      lower.includes('browser click') ||
+      lower.includes('browser fill') ||
+      lower.includes('browser secret') ||
+      lower.includes('browser deny') ||
+      lower.includes('browser screenshot')
+    ) {
+      if (call > 1) {
+        parts.push({ type: 'text-start', id: 'txt_browser_2' })
+        parts.push({
+          type: 'text-delta',
+          id: 'txt_browser_2',
+          delta: 'The managed browser task completed.'
+        })
+        parts.push({ type: 'text-end', id: 'txt_browser_2' })
+        parts.push({ type: 'finish', usage, finishReason: { unified: 'stop', raw: 'stop' } })
+        return parts
+      }
+      const browserUrl = options.getBrowserUrl?.() ?? 'https://example.com'
+      let toolName = 'wiskbot.browser.open.v1'
+      let input: Record<string, unknown> = { url: browserUrl }
+      if (lower.includes('browser snapshot')) {
+        toolName = 'wiskbot.browser.snapshot.v1'
+        input = {}
+      } else if (lower.includes('browser click') || lower.includes('browser deny')) {
+        toolName = 'wiskbot.browser.click.v1'
+        input = { selector: '#action' }
+      } else if (lower.includes('browser secret')) {
+        toolName = 'wiskbot.browser.type.v1'
+        input = { selector: '#secret', value: 'hunter2' }
+      } else if (lower.includes('browser fill')) {
+        toolName = 'wiskbot.browser.type.v1'
+        input = { selector: '#name', value: 'Ada' }
+      } else if (lower.includes('browser screenshot')) {
+        toolName = 'wiskbot.browser.screenshot.v1'
+        input = {}
+      }
+      parts.push({
+        type: 'tool-call',
+        toolCallId: `fake_browser_${suffix}_${call}`,
+        toolName,
+        input: JSON.stringify(input)
+      })
+      parts.push({ type: 'finish', usage, finishReason: { unified: 'tool-calls', raw: 'tool_calls' } })
+      return parts
+    }
 
     if (lower.includes('steps')) {
       parts.push({
@@ -115,8 +166,13 @@ export function createFakeModel(options: FakeModelOptions): LanguageModel {
 }
 
 /** Provider used by the app when the user selects the clearly-labelled fake kind. */
-export function createFakeProvider(getRoot: () => string | undefined) {
+export function createFakeProvider(
+  getRoot: () => string | undefined,
+  getBrowserUrl?: () => string | undefined
+) {
   return customProvider({
-    languageModels: { 'fake-scripted': createFakeModel({ getRoot, delayMs: 80 }) }
+    languageModels: {
+      'fake-scripted': createFakeModel({ getRoot, getBrowserUrl, delayMs: 80 })
+    }
   })
 }
