@@ -48,6 +48,7 @@ function deps() {
     db: getDb(),
     settings,
     ownDirs: [join(root, 'memory'), join(root, 'skills')],
+    skillsDir: dir,
     model: createFakeModel({ getRoot: () => root }),
     approvalSecret: secret,
     emit: (event: ChatEvent) => events.push({ type: 'chat.event', event })

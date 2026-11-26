@@ -16,6 +16,7 @@ import { approvals, messages, toolCalls, type WiskBotDatabase } from '../databas
 import { writeAuditEvent } from '../audit'
 import type { BrowserControl } from '../browser-worker/manager'
 import { buildMemoryIndex, type MemoryIndexEntry } from '../memory'
+import { getUserDataDir } from '../paths'
 import { grantSession } from '../permissions'
 import { safeErrorMessage } from '../redaction'
 import {
@@ -66,6 +67,7 @@ export interface AgentDeps {
   model: LanguageModel
   approvalSecret: string
   browser?: BrowserControl
+  skillsDir?: string
   emit: (event: ChatEvent) => void
 }
 
@@ -324,6 +326,7 @@ export async function runAgent(params: {
     settings: deps.settings,
     ownDirs: deps.ownDirs,
     browser: deps.browser,
+    skillsDir: deps.skillsDir ?? getUserDataDir(),
     emit: deps.emit,
     abortSignal: controller.signal
   }
@@ -519,7 +522,7 @@ export async function runAgent(params: {
         } else {
           run.approvedCalls.add(item.toolCallId)
         }
-        if (decision === 'allow-session' || item.toolName === 'wiskbot.skill.invoke.v1') {
+        if (decision === 'allow-session') {
           grantSession(conversationId, item.toolName, item.target)
         }
         responses.push({

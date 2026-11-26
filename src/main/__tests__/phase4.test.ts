@@ -5,10 +5,11 @@ import Database from 'better-sqlite3'
 import { drizzle } from 'drizzle-orm/better-sqlite3'
 import { migrate } from 'drizzle-orm/better-sqlite3/migrator'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
-import type { ChatEvent, Settings } from '../../shared/ipc'
-import { systemInstructions } from '../agent/runner'
+import type { AppEvent, ChatEvent, Settings } from '../../shared/ipc'
+import { respondApproval, runAgent, systemInstructions } from '../agent/runner'
 import { closeDatabase, getDb, useDatabaseForTests } from '../database'
 import * as schema from '../database/schema'
+import { createFakeModel } from '../fake-provider'
 import {
   buildMemoryIndex,
   listMemories,
@@ -30,12 +31,54 @@ import { createTools, toolNeedsApproval, TOOL_META } from '../tools'
 let dir: string
 let settings: Settings
 
+async function waitFor(predicate: () => boolean, timeoutMs = 8000): Promise<void> {
+  const start = Date.now()
+  while (!predicate()) {
+    if (Date.now() - start > timeoutMs) throw new Error('Timed out waiting for condition')
+    await new Promise((resolve) => setTimeout(resolve, 10))
+  }
+}
+
+function chatEvents(events: AppEvent[]): ChatEvent[] {
+  return events
+    .filter((event): event is Extract<AppEvent, { type: 'chat.event' }> => event.type === 'chat.event')
+    .map((event) => event.event)
+}
+
+function invocationApproval(events: AppEvent[]) {
+  return chatEvents(events).find(
+    (event): event is Extract<ChatEvent, { event: 'approval-request' }> =>
+      event.event === 'approval-request' && event.toolName === 'wiskbot.skill.invoke.v1'
+  )
+}
+
+function skillDeps(events: AppEvent[]) {
+  return {
+    db: getDb(),
+    settings,
+    ownDirs: [],
+    skillsDir: dir,
+    model: createFakeModel({ getRoot: () => dir }),
+    approvalSecret: 'test-approval-secret-1234567890',
+    emit: (event: ChatEvent) => events.push({ type: 'chat.event', event })
+  }
+}
+
 beforeEach(() => {
   dir = mkdtempSync(join(tmpdir(), 'wiskbot-phase4-test-'))
   const sqlite = new Database(join(dir, 'test.db'))
   sqlite.pragma('journal_mode = WAL')
   const db = drizzle(sqlite, { schema })
   migrate(db, { migrationsFolder: join(process.cwd(), 'drizzle') })
+  db.insert(schema.conversations)
+    .values({
+      id: 'conv-skill-fix',
+      title: 'Test',
+      createdAt: Date.now(),
+      updatedAt: Date.now(),
+      settingsJson: '{}'
+    })
+    .run()
   useDatabaseForTests(db, sqlite)
   settings = {
     language: 'en',
@@ -83,11 +126,14 @@ describe('memory service', () => {
     expect(index.length).toBeLessThan(30)
   })
 
-  it('labels imported memory as untrusted', () => {
+  it('labels imported memory as untrusted but settings memory as trusted', () => {
+    saveMemory({ kind: 'preference', content: 'Created in Settings', source: 'settings' })
     saveMemory({ kind: 'imported', content: 'Imported project note', source: 'project' })
-    expect(listMemories()[0].trusted).toBe(false)
-    expect(buildMemoryIndex()[0].trusted).toBe(false)
-    expect(recallMemories('project', 8).results[0].trusted).toBe(false)
+    const byContent = new Map(listMemories().map((memory) => [memory.content, memory]))
+    expect(byContent.get('Created in Settings')?.trusted).toBe(true)
+    expect(byContent.get('Imported project note')?.trusted).toBe(false)
+    expect(buildMemoryIndex().some((entry) => entry.trusted === false)).toBe(true)
+    expect(recallMemories('Imported', 8).results[0].trusted).toBe(false)
   })
 
   it('disables a memory', () => {
@@ -141,6 +187,56 @@ describe('skills', () => {
     const invoked = invokeSkill('folder-summary', Object.keys(TOOL_META), dir)
     expect(invoked.instructions).toContain('Summarise a folder')
     expect(invoked.requiredScopes).toContain('wiskbot.fs.list.v1')
+  })
+
+  it('allow-once asks again on the second skill invocation', async () => {
+    ensureBuiltinSkill(dir)
+    setSkillEnabled('folder-summary', true)
+
+    const firstEvents: AppEvent[] = []
+    const firstRun = runAgent({
+      deps: skillDeps(firstEvents),
+      conversationId: 'conv-skill-fix',
+      text: 'skill invoke'
+    })
+    await waitFor(() => Boolean(invocationApproval(firstEvents)))
+    respondApproval(invocationApproval(firstEvents)!.approvalId, 'allow-once')
+    await firstRun
+
+    const secondEvents: AppEvent[] = []
+    const secondRun = runAgent({
+      deps: skillDeps(secondEvents),
+      conversationId: 'conv-skill-fix',
+      text: 'skill invoke'
+    })
+    await waitFor(() => Boolean(invocationApproval(secondEvents)))
+    respondApproval(invocationApproval(secondEvents)!.approvalId, 'deny')
+    await secondRun
+    expect(invocationApproval(secondEvents)).toBeDefined()
+  })
+
+  it('allow-session reuses the grant on the second skill invocation', async () => {
+    ensureBuiltinSkill(dir)
+    setSkillEnabled('folder-summary', true)
+
+    const firstEvents: AppEvent[] = []
+    const firstRun = runAgent({
+      deps: skillDeps(firstEvents),
+      conversationId: 'conv-skill-fix',
+      text: 'skill invoke'
+    })
+    await waitFor(() => Boolean(invocationApproval(firstEvents)))
+    respondApproval(invocationApproval(firstEvents)!.approvalId, 'allow-session')
+    await firstRun
+
+    const secondEvents: AppEvent[] = []
+    await runAgent({
+      deps: skillDeps(secondEvents),
+      conversationId: 'conv-skill-fix',
+      text: 'skill invoke'
+    })
+    expect(invocationApproval(secondEvents)).toBeUndefined()
+    expect(chatEvents(secondEvents).some((event) => event.event === 'tool-call')).toBe(true)
   })
 
   it('requires approval on first use and reuses a session grant', () => {

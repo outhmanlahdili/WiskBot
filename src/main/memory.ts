@@ -13,7 +13,7 @@ export const MAX_INDEX_BYTES = 8 * 1024
 export const MAX_RECALL_BYTES = 12 * 1024
 export const MAX_PREVIEW_CHARS = 120
 
-const TRUSTED_SOURCES = new Set(['chat'])
+const TRUSTED_SOURCES = new Set(['chat', 'settings'])
 
 export function isTrustedMemory(source: string | null): boolean {
   return source !== null && TRUSTED_SOURCES.has(source)

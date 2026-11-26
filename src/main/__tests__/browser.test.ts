@@ -167,7 +167,8 @@ describe('browser tools through the agent loop', () => {
         db: getDb(),
         settings,
         ownDirs: [join(root, 'memory')],
-        model: createFakeModel({ getRoot: () => root, getBrowserUrl: () => fixtureUrl }),
+        skillsDir: dir,
+      model: createFakeModel({ getRoot: () => root, getBrowserUrl: () => fixtureUrl }),
         approvalSecret: secret,
         browser,
         emit: (event) => events.push({ type: 'chat.event', event })
@@ -194,7 +195,8 @@ describe('browser tools through the agent loop', () => {
         db: getDb(),
         settings,
         ownDirs: [join(root, 'memory')],
-        model: createFakeModel({ getRoot: () => root, getBrowserUrl: () => fixtureUrl }),
+        skillsDir: dir,
+      model: createFakeModel({ getRoot: () => root, getBrowserUrl: () => fixtureUrl }),
         approvalSecret: secret,
         browser,
         emit: (event) => events.push({ type: 'chat.event', event })
@@ -219,6 +221,7 @@ describe('browser tools through the agent loop', () => {
       db: getDb(),
       settings,
       ownDirs: [join(root, 'memory')],
+      skillsDir: dir,
       model: createFakeModel({ getRoot: () => root, getBrowserUrl: () => fixtureUrl }),
       approvalSecret: secret,
       browser,

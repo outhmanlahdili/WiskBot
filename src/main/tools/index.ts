@@ -26,6 +26,8 @@ export interface ToolRunContext {
   abortSignal?: AbortSignal
   /** Injected by main; absent in unit tests that do not exercise browser tools. */
   browser?: BrowserControl
+  /** Base user-data dir for skill files; defaults to the real profile in main. */
+  skillsDir?: string
 }
 
 export type ApprovalKind =
@@ -71,7 +73,7 @@ const MEMORY_RECALL_TOOL_SCHEMA = z
   .object({
     /** Empty string recalls all enabled memories. */
     query: z.string().trim().max(200),
-    limit: z.number().int().min(1).max(8)
+    limit: z.number().int().min(1).max(8).optional().default(8)
   })
   .strict()
 const SKILL_INVOKE_SCHEMA = z
@@ -452,7 +454,7 @@ export function createTools(ctx: ToolRunContext): ToolSet {
     inputSchema: SKILL_INVOKE_SCHEMA,
     execute: async ({ skillId }) => {
       // Re-validate the concrete target and declared scopes inside execute.
-      const skill = invokeSkill(skillId, Object.keys(TOOL_META))
+      const skill = invokeSkill(skillId, Object.keys(TOOL_META), ctx.skillsDir)
       auditTool(ctx, 'wiskbot.skill.invoke.v1', 'allow', { skillId, version: skill.version })
       return {
         untrustedSkillInstructions: true,
