@@ -53,7 +53,9 @@ Status legend: **accepted** (implement as written) · **proposed** (needs valida
 | ADR-046 | Phase 3 requires a screenshot + fill end-to-end smoke before acceptance | accepted | Implementation/type checks are not enough for a user-visible tool; Phase 3b prompt written | Never |
 | ADR-047 | Phase 3 accepted after 3b verification | accepted | Screenshot returned a local path only with no bytes in model context; fill run reached `done` in UI and audit; 42 tests + typecheck + build pass; no secrets in files/history | Never |
 | ADR-048 | "Allow once" must not create a session grant | accepted (fix required in Phase 4b) | `ApprovalDecision` has `allow-once`, `allow-session`, `deny`; only `allow-session` should call `grantSession()` | Never |
-| ADR-049 | Trusted memory sources are `chat` and `settings` | accepted (fix required in Phase 4b) | Both are created by the user inside the app; only imported/project sources should be labelled untrusted | If a future source is user-created but externally authored, classify explicitly |
+| ADR-049 | Trusted memory sources are `chat` and `settings` | accepted (fixed in Phase 4b) | Both are created by the user inside the app; only imported/project sources are labelled untrusted | If a future source is user-created but externally authored, classify explicitly |
+| ADR-050 | Phase 4 accepted after 4b fixes | accepted | `allow-once` grants one call; `allow-session` reuses; settings memory trusted; imported untrusted; 57 tests + typecheck + build pass; no secrets in files/history | Never |
+| ADR-051 | Phase 5 uses a fixed Windows UI Automation adapter, not model-generated shell | accepted | UIA is an accessibility framework with .NET classes; WiskBot invokes a fixed script with JSON arguments, never model-built command strings; no arbitrary shell tool | If a maintained native TS binding proves safer, revisit |
 | ADR-017 | Telemetry disabled by default; no user-data upload | accepted | Local-first and privacy promises | Only with opt-in and a documented policy |
 
 ## Security decisions that must not be relaxed silently

@@ -54,19 +54,14 @@ Owner: Session 1 · Status: active · Last updated: 2026-11-26
 
 **Exit criteria met:** GUI smoke covered open → snapshot → click → fill → screenshot → deny → takeover → stop. 42 tests, typecheck and build pass. No secrets in files or history. Evidence: Phase 3/3b reports, screenshots and logs.
 
-## Phase 4 — Memory, preferences, skills
+## Phase 4 — Memory, preferences and skills (COMPLETE 2026-11-26)
 
-- [ ] Explicit memory save/recall with user-visible context injection
-- [ ] Memory stored as an index plus topic files; index injected, entries read on demand
-- [ ] Imported/project memory treated as untrusted prompt input and labelled in the UI
-- [ ] Preference settings (language, tone, autonomy level)
-- [ ] Local skill manifest format, validation, enable/disable, and one built-in example skill
-- [ ] Skills may be taught by demonstration later; in Phase 4 they are Markdown + manifest only
-- [ ] Skill permission declarations and first-use approval
+- [x] Memory service on the existing `memories` table with bounded index injection and recall
+- [x] `tone` preference across all settings layers and i18n catalogs
+- [x] Markdown + manifest skills with validation, disabled built-in example, and scope checks
+- [x] Phase 4b: `allow-once` grants exactly one call; `settings` memories trusted, imported/project untrusted
 
-**Status: verification follow-up required (2026-11-26).** Implementation and tests are strong, but two behaviour details need correction before acceptance: (1) "Allow once" on a skill currently creates a session grant, which contradicts its meaning; (2) user-created memories from Settings are labelled untrusted because only `chat` is trusted. Phase 4b (`docs/PROMPTS/04b-approval-and-trust-fixes.md`) must fix both.
-
-**Expected exit:** memories and skills survive restart; user can inspect, edit, and delete them; injected context is visible; only imported/project memory is marked untrusted; "Allow once" grants exactly one call.
+**Exit criteria met:** 57 tests, typecheck and build pass; GUI smoke covered save/recall, context indicator, tone persistence, skill approval and reuse. No secrets in files or history. Evidence: Phase 4/4b reports and logs.
 
 ## Phase 5 — Windows computer use
 
