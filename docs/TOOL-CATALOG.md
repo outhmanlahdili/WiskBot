@@ -10,7 +10,7 @@ Risk levels: `read` < `write` < `external` < `destructive`. `privileged` tools a
 | --- | --- | --- | --- | --- | --- |
 | `wiskbot.time.now.v1` | 1 | Current local time and timezone | read | none | — |
 | `wiskbot.providers.test.v1` | 1 | Generate a short response with the selected provider | external | ask on first use per provider | Never logs key; short timeout and token cap |
-| `wiskbot.fs.list.v1` | 2 | List entries in an allowlisted directory | read | none per granted scope | Resolve real path; deny symlink escape; max entries |
+| `wiskbot.fs.list.v1` | 2 | List entries in an allowlisted directory | read | ask on first resolved target, then session grant (updated after Phase 2 review) | Resolve real path; deny symlink escape; 200-entry cap; re-check inside `execute` |
 | `wiskbot.fs.read.v1` | 2 | Read a text file in an allowlisted directory | read | ask on first path | Size cap, binary detection, redaction of detected secrets |
 | `wiskbot.fs.write.v1` | 2 | Write a text file in an allowlisted directory | write | always ask (allow-once/session available) | Show diff preview; no overwrite outside workspace root |
 | `wiskbot.web.fetch.v1` | 2 | Fetch an HTTPS URL and extract readable text | external | ask for new domain | HTTPS only, domain allowlist, size cap, redirect validation, SSRF protection |

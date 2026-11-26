@@ -44,6 +44,10 @@ Status legend: **accepted** (implement as written) · **proposed** (needs valida
 | ADR-037 | `app.deleteLocalData` IPC channel is in scope | accepted | Required by the mandated "Delete all local data" settings action; must be destructive-only, confirmed in UI, and audited | Never |
 | ADR-038 | Phase 1 accepted after 01b verification | accepted | CJS self-contained preload under sandbox; GUI smoke test passed with no security warnings; IPC round-trips, key redaction, DB migrations and RTL verified; all checks pass | Only if new evidence contradicts the smoke test |
 | ADR-039 | Provider metadata must have one source of truth in Phase 2 | accepted | Duplication between main `definitions.ts` and renderer `SettingsView.tsx` is a drift risk; expose definitions through IPC and have the renderer consume them | Never |
+| ADR-040 | Phase 2 accepted after GUI smoke and secret scan | accepted | Two-call approval, signed approvals, deny-no-retry, cancellation and audit verified; 35 tests + typecheck + build pass; no credentials in files/history | Only with new contradicting evidence |
+| ADR-041 | `fs.list` prompts on first resolved target, then session grant | accepted | Safer than silent listing and satisfies the GUI approval requirement; `TOOL-CATALOG.md` corrected to match | If users find repeated first-target prompts excessive, consider a per-root grant |
+| ADR-042 | Denied calls are stored as tool results with a denial reason | accepted | Keeps replayed `ModelMessage[]` history valid across the second model call and later compaction | Never |
+| ADR-043 | Pending approvals and session grants stay in memory | accepted | Signing secret is deliberately not persisted; an app restart drops pending approvals, which fails closed | If users need durable approvals, design explicit persistence with the same secret protection |
 | ADR-017 | Telemetry disabled by default; no user-data upload | accepted | Local-first and privacy promises | Only with opt-in and a documented policy |
 
 ## Security decisions that must not be relaxed silently

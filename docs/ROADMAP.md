@@ -28,19 +28,21 @@ Owner: Session 1 · Status: active · Last updated: 2026-11-26
 
 **Accepted follow-ups (not Phase 1 blockers):** Electron binary may need `node node_modules/electron/install.js` on fresh installs; only one provider was live-tested; `keys.enc` decryption failure has no in-app recovery yet; provider metadata is duplicated between main and renderer; renderer bundle ~843 kB and 10 moderate npm audit findings are Phase 7 items.
 
-## Phase 2 — Safe agent loop
+## Phase 2 — Safe agent loop (COMPLETE 2026-11-26)
 
-- [ ] `ToolLoopAgent` with streaming events over IPC
+- [x] `ToolLoopAgent` with streaming events over IPC
 - [ ] Conversation persistence and message rendering with tool events
 - [ ] `PermissionEngine` + approval UI using the AI SDK two-call approval flow
-- [ ] Approval card shows tool name, resolved target, scope and concrete values; chat-initiated cards wait indefinitely
-- [ ] Time tool and low-risk filesystem read/list tools with allowlisted roots; reading WiskBot's own memory/skill folders never prompts
-- [ ] Signed approval secret (`experimental_toolApprovalSecret`) so forged IPC approvals are rejected
-- [ ] Fix provider metadata duplication and add `keys.enc` reset recovery
-- [ ] Audit log viewer; cancellation; budgets and step limits
-- [ ] Context compaction via `prepareStep` / `pruneMessages`
+- [x] Approval card shows tool name, resolved target, scope and concrete values; chat-initiated cards wait indefinitely
+- [x] Time tool and low-risk filesystem read/list tools with allowlisted roots; reading WiskBot's own memory/skill folders never prompts
+- [x] Signed approval secret (`experimental_toolApprovalSecret`) so forged IPC approvals are rejected
+- [x] Fix provider metadata duplication and add `keys.enc` reset recovery
+- [x] Audit log viewer; cancellation; budgets and step limits
+- [x] Context compaction via `prepareStep` / `pruneMessages`
 
-**Exit:** a user can chat, approve a read-only tool, see the tool result, deny a tool without retry, cancel a run, and inspect the audit log. No key or full tool output appears in logs. Tests cover permission decisions, denial handling and forged approvals. Handoff: `docs/PROMPTS/02-safe-agent-loop.md`.
+**Exit criteria met (2026-11-26):** GUI smoke covered approval → result → done, deny → no retry → audit entry, and cancel with no assistant text. 35 tests pass; typecheck and build pass; no secrets in logs. Evidence: Phase 2 report, screenshot and smoke log. Handoff was `docs/PROMPTS/02-safe-agent-loop.md`.
+
+**Accepted follow-ups:** pending approvals and session grants are in-memory (lost on restart); denied calls are stored as tool results with an explicit denial reason so replayed history stays valid — **accepted**; real BYOK providers still not live-tested. `fs.list` asks on first resolved target — **accepted** and `TOOL-CATALOG.md` corrected.
 
 ## Phase 3 — Browser automation
 
