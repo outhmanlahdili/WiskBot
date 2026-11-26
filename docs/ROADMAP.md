@@ -64,7 +64,9 @@ Owner: Session 1 · Status: active · Last updated: 2026-11-26
 - [ ] Skills may be taught by demonstration later; in Phase 4 they are Markdown + manifest only
 - [ ] Skill permission declarations and first-use approval
 
-**Exit:** memories and skills survive restart; user can inspect, edit, and delete them; injected context is visible in the UI and imported memory is marked untrusted. Prompt to be written when Phase 3 is accepted.
+**Status: verification follow-up required (2026-11-26).** Implementation and tests are strong, but two behaviour details need correction before acceptance: (1) "Allow once" on a skill currently creates a session grant, which contradicts its meaning; (2) user-created memories from Settings are labelled untrusted because only `chat` is trusted. Phase 4b (`docs/PROMPTS/04b-approval-and-trust-fixes.md`) must fix both.
+
+**Expected exit:** memories and skills survive restart; user can inspect, edit, and delete them; injected context is visible; only imported/project memory is marked untrusted; "Allow once" grants exactly one call.
 
 ## Phase 5 — Windows computer use
 
