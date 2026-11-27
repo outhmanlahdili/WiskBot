@@ -63,18 +63,19 @@ Owner: Session 1 · Status: active · Last updated: 2026-11-26
 
 **Exit criteria met:** 57 tests, typecheck and build pass; GUI smoke covered save/recall, context indicator, tone persistence, skill approval and reuse. No secrets in files or history. Evidence: Phase 4/4b reports and logs.
 
-## Phase 5 — Windows computer use
+## Phase 5 — Windows computer use (COMPLETE 2026-11-27)
 
-- [ ] DesktopWorker utility process with a UI Automation adapter
-- [ ] Window allowlist, element-tree reading, invoke/click/type with highlight
-- [ ] Screenshot capture with visible indicator, element highlight before click, and human takeover for sign-in/CAPTCHA
-- [ ] Immediate hard-stop control; explicit approval for every action; no shell fallback
-- [ ] Read accessibility tree before clicking pixels; never place a secret into typed text
-- [ ] Evaluate (do not assume) Meta's native `computer` tool on the Responses API as an optional provider-specific path; AI SDK support is unverified, so the driver-owned design remains the default
+- [x] DesktopWorker utility process + fixed PowerShell UI Automation adapter, no model-built command strings
+- [x] Exact-title window allowlist, bounded tree, invoke/click/type with highlight, secret-field refusal
+- [x] Path-only screenshots, visible desktop indicator, human takeover and immediate stop
+- [x] 64 tests, typecheck and build pass; GUI smoke with real Notepad; no secrets in files/history
+- [x] Meta native `computer` tool evaluated only; driver-owned UIA remains the default
 
-**Exit:** a repeatable, low-risk desktop task (e.g. reading a window's text and clicking a known button in an allowlisted app) succeeds with approval and produces a full audit trail. Reliability limitations are documented in-product.
+**Exit criteria met:** tree read, deny → no retry, type, screenshot path-only, take over / resume / stop all verified on Windows with an allowlisted Notepad window and no console errors. Evidence: Phase 5 report and smoke log. Offscreen element bounds are clamped to zero-size rectangles; UIA invoke does not rely on coordinates and point clicks are validated inside the window rect — accepted.
 
-## Phase 6 — Background tasks and integrations
+## Phase 6 — Background tasks and integrations (two handoffs)
+
+Part A: `docs/PROMPTS/06-background-tasks.md`. Part B: `docs/PROMPTS/06b-mcp-and-local-models.md`. Complete A before B.
 
 - [ ] Task scheduler with cron/interval/one-shot, cancellation, budgets, run history
 - [ ] Optional MCP client with server installation UI, pinned versions, and egress controls

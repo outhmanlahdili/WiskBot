@@ -56,6 +56,8 @@ Status legend: **accepted** (implement as written) · **proposed** (needs valida
 | ADR-049 | Trusted memory sources are `chat` and `settings` | accepted (fixed in Phase 4b) | Both are created by the user inside the app; only imported/project sources are labelled untrusted | If a future source is user-created but externally authored, classify explicitly |
 | ADR-050 | Phase 4 accepted after 4b fixes | accepted | `allow-once` grants one call; `allow-session` reuses; settings memory trusted; imported untrusted; 57 tests + typecheck + build pass; no secrets in files/history | Never |
 | ADR-051 | Phase 5 uses a fixed Windows UI Automation adapter, not model-generated shell | accepted | UIA is an accessibility framework with .NET classes; WiskBot invokes a fixed script with JSON arguments, never model-built command strings; no arbitrary shell tool | If a maintained native TS binding proves safer, revisit |
+| ADR-052 | Phase 5 accepted after code/history audit | accepted | 64 tests + typecheck + build pass; real Notepad smoke with tree/deny/type/screenshot/takeover/stop; no secrets; offscreen bounds clamped safely | Never |
+| ADR-053 | Phase 6 may add `croner` (MIT) and `@modelcontextprotocol/sdk` (MIT) | accepted | Both licences verified on npm; croner has no runtime dependencies; MCP SDK is the official TypeScript implementation | Remove MCP if it proves too heavy for a solo developer |
 | ADR-017 | Telemetry disabled by default; no user-data upload | accepted | Local-first and privacy promises | Only with opt-in and a documented policy |
 
 ## Security decisions that must not be relaxed silently
