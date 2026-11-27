@@ -75,7 +75,7 @@ Owner: Session 1 · Status: active · Last updated: 2026-11-26
 
 ## Phase 6 — Background tasks and integrations (two handoffs)
 
-Part A: `docs/PROMPTS/06-background-tasks.md`. Part B: `docs/PROMPTS/06b-mcp-and-local-models.md`. Complete A before B.
+Part A: `docs/PROMPTS/06-background-tasks.md` — **COMPLETE 2026-11-28** (scheduler, test-run restrictions, keep-awake, offline retry; 76 tests + typecheck + build pass; GUI smoke with one-shot task, run history, cancel). Part B: `docs/PROMPTS/06b-mcp-and-local-models.md` — next handoff.
 
 - [ ] Task scheduler with cron/interval/one-shot, cancellation, budgets, run history
 - [ ] Optional MCP client with server installation UI, pinned versions, and egress controls

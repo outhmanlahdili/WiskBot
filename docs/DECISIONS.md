@@ -58,6 +58,8 @@ Status legend: **accepted** (implement as written) · **proposed** (needs valida
 | ADR-051 | Phase 5 uses a fixed Windows UI Automation adapter, not model-generated shell | accepted | UIA is an accessibility framework with .NET classes; WiskBot invokes a fixed script with JSON arguments, never model-built command strings; no arbitrary shell tool | If a maintained native TS binding proves safer, revisit |
 | ADR-052 | Phase 5 accepted after code/history audit | accepted | 64 tests + typecheck + build pass; real Notepad smoke with tree/deny/type/screenshot/takeover/stop; no secrets; offscreen bounds clamped safely | Never |
 | ADR-053 | Phase 6 may add `croner` (MIT) and `@modelcontextprotocol/sdk` (MIT) | accepted | Both licences verified on npm; croner has no runtime dependencies; MCP SDK is the official TypeScript implementation | Remove MCP if it proves too heavy for a solo developer |
+| ADR-054 | Phase 6a accepted | accepted | Scheduler, test-run tool scoping, no-data policy, 30-min approval timeout → deny, paired keep-awake, offline backoff, Tasks UI; 76 tests + typecheck + build pass; no secrets | Never |
+| ADR-055 | Scheduler rate-limit counters stay in memory | accepted | Same rationale as in-memory approvals; a restart resets counters, which fails closed | If durable limits are needed, persist them with the tasks table |
 | ADR-017 | Telemetry disabled by default; no user-data upload | accepted | Local-first and privacy promises | Only with opt-in and a documented policy |
 
 ## Security decisions that must not be relaxed silently
