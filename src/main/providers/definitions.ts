@@ -92,6 +92,15 @@ export const PROVIDER_DEFINITIONS: Record<ProviderKind, ProviderDefinition> = {
     capabilities: { streaming: true, tools: true },
     availabilityNote: 'Runs locally; no API key is needed. Model size and hardware limits apply.'
   },
+  'lm-studio': {
+    kind: 'lm-studio',
+    displayName: 'LM Studio (local)',
+    defaultBaseUrl: 'http://localhost:11433/v1',
+    defaultModelId: '',
+    needsKey: false,
+    capabilities: { streaming: true, tools: true },
+    availabilityNote: 'Runs locally; no API key is needed. Load a model in LM Studio first.'
+  },
   'openai-compatible': {
     kind: 'openai-compatible',
     displayName: 'OpenAI-compatible endpoint',

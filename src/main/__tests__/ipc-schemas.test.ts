@@ -8,7 +8,7 @@ import {
 describe('settings.update validation', () => {
   it('accepts a partial update', () => {
     const parsed = SettingsUpdateSchema.parse({ language: 'ar' })
-    expect(parsed).toEqual({ language: 'ar' })
+    expect(parsed).toMatchObject({ language: 'ar' })
   })
 
   it('rejects unknown keys', () => {

@@ -27,6 +27,8 @@ export interface FakeModelOptions {
   getBrowserUrl?: () => string | undefined
   /** Allowlisted window title used by desktop-tool scripts. */
   getDesktopTitle?: () => string | undefined
+  /** Fully qualified MCP tool name used by mcp scripts. */
+  getMcpTool?: () => string | undefined
   /** Optional delay used by cancellation tests and smoke checks. */
   delayMs?: number
   /** Deterministic script override for unit tests. */
@@ -61,6 +63,24 @@ export function createFakeModel(options: FakeModelOptions): LanguageModel {
         error: new Error('Provider unreachable: offline')
       })
       parts.push({ type: 'finish', usage, finishReason: { unified: 'error', raw: 'error' } })
+      return parts
+    }
+
+    if (lower.includes('mcp call')) {
+      if (call > 1) {
+        parts.push({ type: 'text-start', id: 'txt_mcp_2' })
+        parts.push({ type: 'text-delta', id: 'txt_mcp_2', delta: 'MCP task completed.' })
+        parts.push({ type: 'text-end', id: 'txt_mcp_2' })
+        parts.push({ type: 'finish', usage, finishReason: { unified: 'stop', raw: 'stop' } })
+        return parts
+      }
+      parts.push({
+        type: 'tool-call',
+        toolCallId: `fake_mcp_${suffix}_${call}`,
+        toolName: options.getMcpTool?.() ?? 'mcp.test.read_note',
+        input: JSON.stringify({ query: 'hello' })
+      })
+      parts.push({ type: 'finish', usage, finishReason: { unified: 'tool-calls', raw: 'tool_calls' } })
       return parts
     }
 
@@ -267,11 +287,18 @@ export function createFakeModel(options: FakeModelOptions): LanguageModel {
 export function createFakeProvider(
   getRoot: () => string | undefined,
   getBrowserUrl?: () => string | undefined,
-  getDesktopTitle?: () => string | undefined
+  getDesktopTitle?: () => string | undefined,
+  getMcpTool?: () => string | undefined
 ) {
   return customProvider({
     languageModels: {
-      'fake-scripted': createFakeModel({ getRoot, getBrowserUrl, getDesktopTitle, delayMs: 80 })
+      'fake-scripted': createFakeModel({
+        getRoot,
+        getBrowserUrl,
+        getDesktopTitle,
+        getMcpTool,
+        delayMs: 80
+      })
     }
   })
 }

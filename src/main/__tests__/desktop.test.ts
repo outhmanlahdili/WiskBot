@@ -119,7 +119,9 @@ beforeEach(() => {
     browserDomains: [],
     tone: 'concise',
     desktopWindowTitles: [TEST_TITLE],
-    keepAwakeForTasks: true
+    keepAwakeForTasks: true,
+    localModelCatalogs: {},
+    mcpServers: []
   }
   desktop = makeDesktop()
 })

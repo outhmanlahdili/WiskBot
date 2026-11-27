@@ -96,7 +96,9 @@ beforeEach(() => {
     browserDomains: [],
     tone: 'concise',
     desktopWindowTitles: [],
-    keepAwakeForTasks: true
+    keepAwakeForTasks: true,
+    localModelCatalogs: {},
+    mcpServers: []
   }
   events = []
 })

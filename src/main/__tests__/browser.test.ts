@@ -134,7 +134,9 @@ beforeEach(() => {
     browserDomains: ['127.0.0.1'],
     tone: 'concise',
     desktopWindowTitles: [],
-    keepAwakeForTasks: true
+    keepAwakeForTasks: true,
+    localModelCatalogs: {},
+    mcpServers: []
   }
   events = []
   browser = makeBrowser()

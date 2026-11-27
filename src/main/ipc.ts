@@ -22,13 +22,22 @@ import { auditEvents, conversations, getDb, messages } from './database'
 import { logger } from './logger'
 import { deleteMemory, listMemories, saveMemory, setMemoryEnabled } from './memory'
 import { getUserDataDir } from './paths'
+import {
+  addMcpServer,
+  getCachedTools,
+  refreshMcpTools,
+  removeMcpServer,
+  setMcpEnabled
+} from './mcp/service'
 import { listSkills, setSkillEnabled } from './skills'
+import { registerMcpToolMeta } from './tools'
 import { createTaskExecutor } from './tasks/executor'
 import { createTask, deleteTask, listTaskRuns, listTasks, setTaskEnabled, updateTask } from './tasks/service'
 import { TaskScheduler } from './tasks/scheduler'
 import {
   getModelForProvider,
   listProviders,
+  refreshLocalModels,
   removeProvider,
   testProvider,
   upsertProvider
@@ -460,6 +469,40 @@ export function registerIpcHandlers(): void {
   handle('tasks.runs', (payload) => listTaskRuns(payload.taskId, payload.limit))
 
   handle('tasks.cancel', (payload) => ({ cancelled: getTaskScheduler().cancel(payload.id) }))
+
+  handle('providers.refreshModels', async (payload) => {
+    const result = await refreshLocalModels(payload.id)
+    if (!result.error) {
+      updateSettings({
+        localModelCatalogs: { ...getSettings().localModelCatalogs, [payload.id]: result.models }
+      })
+    }
+    return result
+  })
+
+  handle('mcp.add', (payload) => {
+    const next = addMcpServer(payload, getSettings())
+    const server = next.mcpServers[next.mcpServers.length - 1]
+    return { id: server.id, versionHash: server.versionHash }
+  })
+
+  handle('mcp.remove', (payload) => {
+    removeMcpServer(payload.id, getSettings())
+    return { removed: true }
+  })
+
+  handle('mcp.setEnabled', (payload) => {
+    setMcpEnabled(payload.id, payload.enabled, getSettings())
+    return { ok: true }
+  })
+
+  handle('mcp.refresh', async () => {
+    const result = await refreshMcpTools(getSettings())
+    registerMcpToolMeta(result.tools)
+    return result
+  })
+
+  handle('mcp.tools', () => getCachedTools())
 
   handle('desktop.status', () => getDesktopManager().getStatus())
 

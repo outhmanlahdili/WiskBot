@@ -16,6 +16,7 @@ import { writeAuditEvent } from '../audit'
 import { getDb } from '../database'
 import { providers } from '../database/schema'
 import { createFakeProvider } from '../fake-provider'
+import { getCachedTools } from '../mcp/service'
 import { logger, registerSecret } from '../logger'
 import { deleteKey, getKey, getKeyHint, hasKey, saveKey } from '../secure-store'
 import { safeErrorMessage } from '../redaction'
@@ -129,6 +130,37 @@ function resolveModel(row: ProviderRow, apiKey: string) {
   }
 }
 
+/** Fetch the model ids exposed by a local OpenAI-compatible endpoint. */
+export type LocalFetch = (
+  url: string,
+  init?: { signal?: AbortSignal }
+) => Promise<{ ok: boolean; status: number; json(): Promise<unknown> }>
+
+export async function refreshLocalModels(
+  id: string,
+  fetchImpl: LocalFetch = fetch
+): Promise<{ models: string[]; error?: string }> {
+  const row = findRow(id)
+  if (!row) return { models: [], error: 'Provider not found.' }
+  const localKinds: ProviderKind[] = ['ollama', 'lm-studio', 'openai-compatible']
+  if (!localKinds.includes(row.kind as ProviderKind)) {
+    return { models: [], error: 'Model refresh is only available for local endpoints.' }
+  }
+  try {
+    const url = new URL('/v1/models', row.baseUrl).toString()
+    const response = await fetchImpl(url, { signal: AbortSignal.timeout(5000) })
+    if (!response.ok) throw new Error(`Endpoint returned ${response.status}`)
+    const body = (await response.json()) as { data?: Array<{ id?: string }> }
+    const models = (body.data ?? []).map((item) => item.id).filter((value): value is string => typeof value === 'string')
+    writeAuditEvent('providers.refreshModels', id, 'allow', { count: models.length })
+    return { models }
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error)
+    writeAuditEvent('providers.refreshModels', id, 'deny', { error: message })
+    return { models: [], error: `Could not fetch models: ${message}` }
+  }
+}
+
 /** Resolve a model for the agent loop. Keys never leave the main process. */
 export async function getModelForProvider(id: string): Promise<LanguageModel> {
   const row = findRow(id)
@@ -146,7 +178,8 @@ export async function getModelForProvider(id: string): Promise<LanguageModel> {
         const domain = getSettings().browserDomains[0]
         return domain ? `https://${domain}/` : undefined
       },
-      () => getSettings().desktopWindowTitles[0]
+      () => getSettings().desktopWindowTitles[0],
+      () => getCachedTools()[0]?.name
     ).languageModel('fake-scripted')
   }
 

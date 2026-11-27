@@ -9,6 +9,7 @@ import { canonicalizeWithinRoot, isInside, resolveBrowserUrl } from '../allowlis
 import { writeAuditEvent } from '../audit'
 import type { BrowserControl } from '../browser-worker/manager'
 import type { DesktopControl } from '../desktop-worker/manager'
+import { callMcpTool, getCachedEntries } from '../mcp/service'
 import { recallMemories, saveMemory } from '../memory'
 import { getUserDataDir } from '../paths'
 import { hasSessionGrant } from '../permissions'
@@ -49,6 +50,7 @@ export type ApprovalKind =
   | 'skill-invoke'
   | 'desktop-read'
   | 'desktop-write'
+  | 'mcp-call'
 
 export interface ToolMeta {
   name: string
@@ -662,6 +664,25 @@ export function createTools(ctx: ToolRunContext): ToolSet {
     }
   })
 
+  const mcpTools: ToolSet = {}
+  for (const cached of getCachedEntries()) {
+    mcpTools[cached.descriptor.name] = tool({
+      description: cached.descriptor.description,
+      inputSchema: cached.zod,
+      execute: async (input) => {
+        const result = await callMcpTool(
+          cached.descriptor.name,
+          input as Record<string, unknown>,
+          ctx.settings
+        )
+        auditTool(ctx, cached.descriptor.name, 'allow', {
+          serverId: cached.descriptor.serverId
+        })
+        return result
+      }
+    })
+  }
+
   return {
     'wiskbot.time.now.v1': timeNow,
     'wiskbot.fs.list.v1': fsList,
@@ -678,7 +699,8 @@ export function createTools(ctx: ToolRunContext): ToolSet {
     'wiskbot.desktop.activate.v1': desktopActivate,
     'wiskbot.desktop.click.v1': desktopClick,
     'wiskbot.desktop.type.v1': desktopType,
-    'wiskbot.desktop.screenshot.v1': desktopScreenshot
+    'wiskbot.desktop.screenshot.v1': desktopScreenshot,
+    ...mcpTools
   }
 }
 
@@ -746,6 +768,21 @@ export function toolNeedsApproval(
     return { status: 'auto-approved', reason: 'Allowed for this session.', ...base }
   }
   return { status: 'user-approval', reason: meta.description, ...base }
+}
+
+/** Register discovered MCP tool metadata so the shared approval policy sees it. */
+export function registerMcpToolMeta(descriptors: Array<{ name: string; serverId: string; description: string; versionHash: string }>): void {
+  for (const descriptor of descriptors) {
+    TOOL_META[descriptor.name] = {
+      name: descriptor.name,
+      risk: 'read',
+      description: descriptor.description,
+      scope: 'MCP read-only server',
+      approval: 'mcp-call',
+      resolve: () => `${descriptor.serverId}@${descriptor.versionHash}`,
+      preview: (input) => `Call read-only MCP tool ${descriptor.name} with ${JSON.stringify(input).slice(0, 300)}`
+    }
+  }
 }
 
 export function newToolCallId(): string {

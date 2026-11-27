@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from 'react'
 import { Check, Trash2 } from 'lucide-react'
 import type {
   Language,
+  McpToolDescriptor,
   MemoryKind,
   MemoryRecord,
   PermissionDefaults,
@@ -140,6 +141,19 @@ export function SettingsView({
   const [memoryKind, setMemoryKind] = useState<MemoryKind>('preference')
   const [memoryContent, setMemoryContent] = useState('')
   const [memoryMessage, setMemoryMessage] = useState('')
+  const [modelCatalogs, setModelCatalogs] = useState<Record<string, string[]>>(
+    () => settings.localModelCatalogs ?? {}
+  )
+  const [refreshingModels, setRefreshingModels] = useState<string | null>(null)
+  const [modelError, setModelError] = useState('')
+  const [mcpTools, setMcpTools] = useState<McpToolDescriptor[]>([])
+  const [mcpErrors, setMcpErrors] = useState<string[]>([])
+  const [refreshingMcp, setRefreshingMcp] = useState(false)
+  const [mcpName, setMcpName] = useState('')
+  const [mcpTransport, setMcpTransport] = useState<'stdio' | 'http'>('stdio')
+  const [mcpTarget, setMcpTarget] = useState('')
+  const [mcpPinnedVersion, setMcpPinnedVersion] = useState('')
+  const [mcpMessage, setMcpMessage] = useState('')
   const t = (key: TranslationKey) => translate(language, key)
 
   const refreshData = useCallback(async () => {
@@ -158,6 +172,30 @@ export function SettingsView({
   useEffect(() => {
     void refreshData()
   }, [refreshData])
+
+  // Keep discovered local models in sync with persisted settings without
+  // dropping models just fetched from a local endpoint.
+  useEffect(() => {
+    setModelCatalogs((current) => {
+      const merged: Record<string, string[]> = { ...settings.localModelCatalogs }
+      for (const [id, models] of Object.entries(current)) {
+        if (models.length > 0) merged[id] = models
+      }
+      return merged
+    })
+  }, [settings.localModelCatalogs])
+
+  const loadMcpTools = useCallback(async () => {
+    try {
+      setMcpTools(await window.wiskbot.send('mcp.tools'))
+    } catch (cause) {
+      setMcpErrors([String(cause)])
+    }
+  }, [])
+
+  useEffect(() => {
+    void loadMcpTools()
+  }, [loadMcpTools])
 
   const saveMemory = async () => {
     const content = memoryContent.trim()
@@ -278,6 +316,109 @@ export function SettingsView({
     } catch (error) {
       onError(String(error))
     }
+  }
+
+  const refreshLocalModels = async (provider: ProviderPublic) => {
+    setRefreshingModels(provider.id)
+    setModelError('')
+    try {
+      const result = await window.wiskbot.send('providers.refreshModels', { id: provider.id })
+      if (result.error) {
+        setModelError(result.error)
+        return
+      }
+      setModelCatalogs((current) => ({ ...current, [provider.id]: result.models }))
+      onRefresh()
+    } catch (cause) {
+      setModelError(String(cause))
+    } finally {
+      setRefreshingModels(null)
+    }
+  }
+
+  /** Populate the existing provider form so the model is saved via providers.upsert. */
+  const selectLocalModel = (provider: ProviderPublic, modelId: string) => {
+    setForm({
+      id: provider.id,
+      kind: provider.kind,
+      displayName: provider.displayName,
+      baseUrl: provider.baseUrl,
+      modelId,
+      apiKey: '',
+      enabled: provider.enabled
+    })
+    setTestMessage('')
+  }
+
+  const addMcpServer = async () => {
+    const name = mcpName.trim()
+    const target = mcpTarget.trim()
+    if (!name || !target) {
+      setMcpMessage(t('mcp.nameRequired'))
+      return
+    }
+    setMcpMessage('')
+    const pinnedVersion = mcpPinnedVersion.trim()
+    try {
+      await window.wiskbot.send('mcp.add', {
+        name,
+        transport: mcpTransport,
+        target,
+        ...(pinnedVersion ? { pinnedVersion } : {})
+      })
+      setMcpName('')
+      setMcpTarget('')
+      setMcpPinnedVersion('')
+      setMcpMessage(t('mcp.added'))
+      onRefresh()
+      await loadMcpTools()
+    } catch (cause) {
+      setMcpMessage(`${t('mcp.error')}: ${String(cause)}`)
+    }
+  }
+
+  const toggleMcpServer = async (server: Settings['mcpServers'][number], enabled: boolean) => {
+    try {
+      await window.wiskbot.send('mcp.setEnabled', { id: server.id, enabled })
+      onRefresh()
+      await loadMcpTools()
+    } catch (cause) {
+      setMcpMessage(`${t('mcp.error')}: ${String(cause)}`)
+    }
+  }
+
+  const removeMcpServer = async (id: string) => {
+    try {
+      await window.wiskbot.send('mcp.remove', { id })
+      onRefresh()
+      await loadMcpTools()
+    } catch (cause) {
+      setMcpMessage(`${t('mcp.error')}: ${String(cause)}`)
+    }
+  }
+
+  const refreshMcpTools = async () => {
+    setRefreshingMcp(true)
+    try {
+      const result = await window.wiskbot.send('mcp.refresh')
+      setMcpTools(result.tools)
+      setMcpErrors(result.errors)
+      onRefresh()
+    } catch (cause) {
+      setMcpErrors([String(cause)])
+    } finally {
+      setRefreshingMcp(false)
+    }
+  }
+
+  const serverName = (id: string) =>
+    settings.mcpServers.find((server) => server.id === id)?.name ?? id
+
+  const toolsByServer = new Map<string, McpToolDescriptor[]>()
+  for (const tool of mcpTools) {
+    const group = toolsByServer.get(tool.serverId) ?? []
+    group.push(tool)
+    toolsByServer.set(tool.serverId, group)
   }
 
   const changePermission = (risk: RiskLevel, mode: PermissionMode) => {
@@ -426,37 +567,86 @@ export function SettingsView({
             {providers.length === 0 && (
               <p className="text-sm text-muted-foreground">{t('settings.none')}</p>
             )}
-            {providers.map((provider) => (
-              <div
-                key={provider.id}
-                className="flex flex-wrap items-center gap-2 rounded-md border border-border p-3"
-              >
-                <div className="min-w-40 flex-1">
-                  <div className="font-medium">{provider.displayName}</div>
-                  <div className="text-xs text-muted-foreground">
-                    {provider.modelId} · {provider.hasKey ? `${t('settings.keyStored')} (${provider.keyHint})` : t('settings.noKey')}
-                  </div>
-                  {provider.availabilityNote && (
-                    <div className="text-xs text-muted-foreground">{provider.availabilityNote}</div>
-                  )}
-                </div>
-                <Button variant="outline" size="sm" onClick={() => startEdit(provider)}>
-                  {t('settings.editProvider')}
-                </Button>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  disabled={testing !== null}
-                  onClick={() => test(provider.id)}
+            {providers.map((provider) => {
+              const isLocal = provider.kind === 'ollama' || provider.kind === 'lm-studio'
+              const catalog = modelCatalogs[provider.id] ?? []
+              return (
+                <div
+                  key={provider.id}
+                  className="flex flex-wrap items-center gap-2 rounded-md border border-border p-3"
                 >
-                  {testing === provider.id ? t('settings.testing') : t('settings.test')}
-                </Button>
-                <Button variant="destructive" size="icon" onClick={() => remove(provider.id)}>
-                  <Trash2 className="h-4 w-4" aria-label={t('settings.delete')} />
-                </Button>
-              </div>
-            ))}
+                  <div className="min-w-40 flex-1">
+                    <div className="font-medium">{provider.displayName}</div>
+                    <div className="text-xs text-muted-foreground">
+                      {provider.modelId} · {provider.hasKey ? `${t('settings.keyStored')} (${provider.keyHint})` : t('settings.noKey')}
+                    </div>
+                    {provider.availabilityNote && (
+                      <div className="text-xs text-muted-foreground">{provider.availabilityNote}</div>
+                    )}
+                    {isLocal && (
+                      <div className="mt-2 flex flex-col gap-2">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <Button
+                            type="button"
+                            variant="outline"
+                            size="sm"
+                            disabled={refreshingModels !== null}
+                            onClick={() => void refreshLocalModels(provider)}
+                          >
+                            {refreshingModels === provider.id
+                              ? t('localModels.refreshing')
+                              : t('localModels.refresh')}
+                          </Button>
+                          <span className="text-xs text-muted-foreground">
+                            {t('localModels.help')}
+                          </span>
+                        </div>
+                        <span className="text-xs font-medium">{t('localModels.title')}</span>
+                        {catalog.length === 0 ? (
+                          <p className="text-xs text-muted-foreground">{t('localModels.none')}</p>
+                        ) : (
+                          <div className="flex flex-wrap gap-2">
+                            {catalog.map((model) => (
+                              <button
+                                key={model}
+                                type="button"
+                                title={t('localModels.useModel')}
+                                aria-label={t('localModels.useModel')}
+                                onClick={() => selectLocalModel(provider, model)}
+                                className={`rounded border px-2 py-1 text-xs ${
+                                  provider.modelId === model
+                                    ? 'border-primary bg-primary/10 text-primary'
+                                    : 'border-border bg-muted hover:bg-accent'
+                                }`}
+                              >
+                                {model}
+                                {provider.modelId === model && ` · ${t('localModels.current')}`}
+                              </button>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                  <Button variant="outline" size="sm" onClick={() => startEdit(provider)}>
+                    {t('settings.editProvider')}
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    disabled={testing !== null}
+                    onClick={() => test(provider.id)}
+                  >
+                    {testing === provider.id ? t('settings.testing') : t('settings.test')}
+                  </Button>
+                  <Button variant="destructive" size="icon" onClick={() => remove(provider.id)}>
+                    <Trash2 className="h-4 w-4" aria-label={t('settings.delete')} />
+                  </Button>
+                </div>
+              )
+            })}
             {testMessage && <p className="text-sm text-muted-foreground">{testMessage}</p>}
+            {modelError && <p className="text-sm text-destructive">{modelError}</p>}
           </CardContent>
         </Card>
 
@@ -544,6 +734,159 @@ export function SettingsView({
             <p className="text-xs text-muted-foreground sm:col-span-2">
               {t('settings.keyNeverRendered')}
             </p>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader>
+            <CardTitle>{t('mcp.title')}</CardTitle>
+            <CardDescription>{t('mcp.help')}</CardDescription>
+          </CardHeader>
+          <CardContent className="flex flex-col gap-3">
+            {settings.mcpServers.length === 0 && (
+              <p className="text-sm text-muted-foreground">{t('mcp.none')}</p>
+            )}
+            {settings.mcpServers.map((server) => (
+              <div
+                key={server.id}
+                className="flex flex-wrap items-center gap-2 rounded-md border border-border p-3"
+              >
+                <div className="min-w-40 flex-1">
+                  <div className="font-medium" dir="auto">{server.name}</div>
+                  <div className="text-xs text-muted-foreground">
+                    {t(`mcp.transport.${server.transport}` as TranslationKey)} ·{' '}
+                    <span dir="auto">{shortText(server.target, 80)}</span>
+                  </div>
+                  <div className="text-xs text-muted-foreground">
+                    {t('mcp.configHash')}: {server.versionHash}
+                    {server.pinnedVersion && ` · ${t('mcp.version')}: ${server.pinnedVersion}`}
+                  </div>
+                </div>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => void toggleMcpServer(server, !server.enabled)}
+                >
+                  {server.enabled ? t('mcp.disable') : t('mcp.enable')}
+                </Button>
+                <Button
+                  type="button"
+                  variant="destructive"
+                  size="sm"
+                  onClick={() => void removeMcpServer(server.id)}
+                >
+                  {t('mcp.remove')}
+                </Button>
+              </div>
+            ))}
+
+            <div className="flex flex-col gap-2 rounded-md border border-border p-3">
+              <div className="grid gap-2 sm:grid-cols-2">
+                <label className="flex flex-col gap-1 text-sm">
+                  {t('mcp.name')}
+                  <Input
+                    value={mcpName}
+                    maxLength={80}
+                    placeholder={t('mcp.namePlaceholder')}
+                    onChange={(event) => setMcpName(event.target.value)}
+                    aria-label={t('mcp.name')}
+                  />
+                </label>
+                <label className="flex flex-col gap-1 text-sm">
+                  {t('mcp.transport')}
+                  <select
+                    className="h-9 rounded-md border border-input bg-background px-2"
+                    value={mcpTransport}
+                    onChange={(event) => setMcpTransport(event.target.value as 'stdio' | 'http')}
+                    aria-label={t('mcp.transport')}
+                  >
+                    <option value="stdio">{t('mcp.transport.stdio')}</option>
+                    <option value="http">{t('mcp.transport.http')}</option>
+                  </select>
+                </label>
+                <label className="flex flex-col gap-1 text-sm sm:col-span-2">
+                  {t('mcp.target')}
+                  <Input
+                    value={mcpTarget}
+                    maxLength={1000}
+                    placeholder={t('mcp.targetPlaceholder')}
+                    onChange={(event) => setMcpTarget(event.target.value)}
+                    aria-label={t('mcp.target')}
+                  />
+                  <span className="text-xs text-muted-foreground">{t('mcp.targetHelp')}</span>
+                </label>
+                <label className="flex flex-col gap-1 text-sm sm:col-span-2">
+                  {t('mcp.pinnedVersion')}
+                  <Input
+                    value={mcpPinnedVersion}
+                    maxLength={80}
+                    onChange={(event) => setMcpPinnedVersion(event.target.value)}
+                    aria-label={t('mcp.pinnedVersion')}
+                  />
+                </label>
+              </div>
+              <div className="flex flex-wrap items-center gap-2">
+                <Button type="button" onClick={() => void addMcpServer()}>
+                  {t('mcp.add')}
+                </Button>
+                <Button
+                  type="button"
+                  variant="outline"
+                  disabled={refreshingMcp}
+                  onClick={() => void refreshMcpTools()}
+                >
+                  {refreshingMcp ? t('mcp.refreshing') : t('mcp.refresh')}
+                </Button>
+                {mcpMessage && (
+                  <p className="text-sm text-muted-foreground">{mcpMessage}</p>
+                )}
+              </div>
+            </div>
+
+            <div className="flex flex-col gap-2">
+              <h3 className="text-sm font-medium">{t('mcp.toolsTitle')}</h3>
+              <p className="text-xs text-muted-foreground">{t('mcp.toolsHelp')}</p>
+              {mcpTools.length === 0 && (
+                <p className="text-sm text-muted-foreground">{t('mcp.toolsNone')}</p>
+              )}
+              {Array.from(toolsByServer.entries()).map(([serverId, tools]) => (
+                <div
+                  key={serverId}
+                  className="flex flex-col gap-2 rounded-md border border-border p-3"
+                >
+                  <div className="text-sm font-medium" dir="auto">{serverName(serverId)}</div>
+                  {tools.map((tool) => (
+                    <div key={tool.name} className="flex flex-wrap items-start gap-2 text-sm">
+                      <span className="min-w-0 break-all" dir="auto">{tool.toolName}</span>
+                      <span
+                        className={`rounded border px-1.5 py-0.5 text-xs ${
+                          tool.readOnly
+                            ? 'border-border bg-muted text-muted-foreground'
+                            : 'border-destructive bg-destructive/10 text-destructive'
+                        }`}
+                      >
+                        {tool.readOnly ? t('mcp.readOnly') : t('mcp.notReadOnly')}
+                      </span>
+                      <span className="text-xs text-muted-foreground" dir="auto">
+                        {tool.description || t('mcp.descriptionNone')}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              ))}
+            </div>
+
+            {mcpErrors.length > 0 && (
+              <div className="flex flex-col gap-1">
+                <p className="text-sm font-medium text-destructive">{t('mcp.errorsTitle')}</p>
+                {mcpErrors.map((error, index) => (
+                  <p key={`${index}-${error}`} className="text-xs text-destructive" dir="auto">
+                    {error}
+                  </p>
+                ))}
+              </div>
+            )}
           </CardContent>
         </Card>
 

@@ -38,7 +38,19 @@ export const SettingsSchema = z
     /** Exact window titles the desktop worker may control (Phase 5). */
     desktopWindowTitles: z.array(z.string().min(1)).max(32),
     /** Hold a power-save blocker while tasks run (Phase 6a). */
-    keepAwakeForTasks: z.boolean()
+    keepAwakeForTasks: z.boolean(),
+    /** Model ids discovered from local endpoints (Phase 6b), keyed by provider id. */
+    localModelCatalogs: z.record(z.string(), z.array(z.string())).default({}),
+    /** User-supplied MCP servers with a pinned config hash (Phase 6b). */
+    mcpServers: z.array(z.object({
+      id: z.string().regex(/^[a-zA-Z0-9_-]{1,64}$/),
+      name: z.string().trim().min(1).max(80),
+      transport: z.enum(['stdio', 'http']),
+      target: z.string().trim().min(1).max(1000),
+      enabled: z.boolean(),
+      versionHash: z.string().min(4),
+      pinnedVersion: z.string().max(80).optional()
+    })).max(16).default([])
   })
   .strict()
 export type Settings = z.infer<typeof SettingsSchema>
@@ -55,6 +67,7 @@ export const ProviderKindSchema = z.enum([
   'openrouter',
   'meta-muse',
   'ollama',
+  'lm-studio',
   'openai-compatible',
   /** Deterministic in-process model for tests and smoke checks; never a real API. */
   'fake'
@@ -128,6 +141,29 @@ export const ProviderUpsertSchema = z
     }
   })
 export type ProviderUpsert = z.input<typeof ProviderUpsertSchema>
+
+export const McpServerInputSchema = z
+  .object({
+    name: z.string().trim().min(1).max(80),
+    transport: z.enum(['stdio', 'http']),
+    target: z.string().trim().min(1).max(1000),
+    pinnedVersion: z.string().max(80).optional()
+  })
+  .strict()
+
+export const McpEnabledInputSchema = z
+  .object({ id: z.string().min(1), enabled: z.boolean() })
+  .strict()
+
+export interface McpToolDescriptor {
+  /** Fully qualified: mcp.<serverId>.<toolName> */
+  name: string
+  serverId: string
+  toolName: string
+  description: string
+  readOnly: boolean
+  versionHash: string
+}
 
 export const TaskScheduleSchema = z.discriminatedUnion('kind', [
   z.object({ kind: z.literal('once'), at: z.number().int().min(0) }),
@@ -368,6 +404,12 @@ export const IpcRequestSchemas = {
   'tasks.test': IdPayloadSchema,
   'tasks.runs': TaskRunListSchema,
   'tasks.cancel': IdPayloadSchema,
+  'providers.refreshModels': IdPayloadSchema,
+  'mcp.add': McpServerInputSchema,
+  'mcp.remove': IdPayloadSchema,
+  'mcp.setEnabled': McpEnabledInputSchema,
+  'mcp.refresh': z.void(),
+  'mcp.tools': z.void(),
   'app.deleteLocalData': z.void(),
   'app.resetKeyStore': z.object({ confirmed: z.literal(true) }).strict()
 } as const satisfies Record<string, z.ZodType>
@@ -506,6 +548,12 @@ export interface IpcResultMap {
   'tasks.test': { status: string; summary: string; error: string | null }
   'tasks.runs': TaskRunRecord[]
   'tasks.cancel': { cancelled: boolean }
+  'providers.refreshModels': { models: string[]; error?: string }
+  'mcp.add': { id: string; versionHash: string }
+  'mcp.remove': { removed: boolean }
+  'mcp.setEnabled': { ok: boolean }
+  'mcp.refresh': { tools: McpToolDescriptor[]; errors: string[] }
+  'mcp.tools': McpToolDescriptor[]
   'app.deleteLocalData': { deleted: boolean }
   'app.resetKeyStore': { reset: boolean }
 }

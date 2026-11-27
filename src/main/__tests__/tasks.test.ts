@@ -48,7 +48,9 @@ beforeEach(() => {
     browserDomains: [],
     tone: 'concise',
     desktopWindowTitles: ['Untitled - Notepad'],
-    keepAwakeForTasks: true
+    keepAwakeForTasks: true,
+    localModelCatalogs: {},
+    mcpServers: []
   }
 })
 
