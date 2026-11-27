@@ -60,6 +60,8 @@ Status legend: **accepted** (implement as written) · **proposed** (needs valida
 | ADR-053 | Phase 6 may add `croner` (MIT) and `@modelcontextprotocol/sdk` (MIT) | accepted | Both licences verified on npm; croner has no runtime dependencies; MCP SDK is the official TypeScript implementation | Remove MCP if it proves too heavy for a solo developer |
 | ADR-054 | Phase 6a accepted | accepted | Scheduler, test-run tool scoping, no-data policy, 30-min approval timeout → deny, paired keep-awake, offline backoff, Tasks UI; 76 tests + typecheck + build pass; no secrets | Never |
 | ADR-055 | Scheduler rate-limit counters stay in memory | accepted | Same rationale as in-memory approvals; a restart resets counters, which fails closed | If durable limits are needed, persist them with the tasks table |
+| ADR-056 | Phase 6b accepted | accepted | Local profiles without keys, read-only MCP with narrow schemas, config-hash grants, deny-no-execute, 86 tests + typecheck + build pass; no secrets | Never |
+| ADR-057 | User-supplied stdio MCP commands run with app privileges | accepted with explicit warning | Server is disabled by default, added explicitly by the user, no shell string, no downloads; document in `SECURITY.md` during Phase 7 | Revisit if a sandbox for local MCP processes becomes practical |
 | ADR-017 | Telemetry disabled by default; no user-data upload | accepted | Local-first and privacy promises | Only with opt-in and a documented policy |
 
 ## Security decisions that must not be relaxed silently
