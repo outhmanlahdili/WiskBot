@@ -95,7 +95,8 @@ beforeEach(() => {
     allowedFsRoots: [root],
     browserDomains: [],
     tone: 'concise',
-    desktopWindowTitles: []
+    desktopWindowTitles: [],
+    keepAwakeForTasks: true
   }
   events = []
 })

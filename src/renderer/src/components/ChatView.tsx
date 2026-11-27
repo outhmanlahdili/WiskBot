@@ -49,6 +49,7 @@ export function ChatView({ language, conversationId, providerId, onError }: Chat
   const [desktopTitle, setDesktopTitle] = useState('')
   const [desktopMessage, setDesktopMessage] = useState('')
   const [desktopTakeoverActive, setDesktopTakeoverActive] = useState(false)
+  const [keepAwakeActive, setKeepAwakeActive] = useState(false)
   const [memoryContext, setMemoryContext] = useState<MemoryContextEntry[] | null>(null)
   const bottomRef = useRef<HTMLDivElement>(null)
   const t = (key: TranslationKey) => translate(language, key)
@@ -120,6 +121,11 @@ export function ChatView({ language, conversationId, providerId, onError }: Chat
     return window.wiskbot.onEvent((event) => {
       if (event.type !== 'chat.event') return
       const incoming = event.event
+      if (incoming.event === 'keep-awake') {
+        if (incoming.conversationId && incoming.conversationId !== conversationId) return
+        setKeepAwakeActive(incoming.active)
+        return
+      }
       if (incoming.event === 'memory-context') {
         if (incoming.conversationId && incoming.conversationId !== conversationId) return
         setMemoryContext(incoming.entries)
@@ -295,6 +301,7 @@ export function ChatView({ language, conversationId, providerId, onError }: Chat
     switch (part.event) {
       case 'text-delta':
       case 'memory-context':
+      case 'keep-awake':
         return null
       case 'tool-call':
         return (
@@ -520,6 +527,15 @@ export function ChatView({ language, conversationId, providerId, onError }: Chat
         </div>
         {!providerId && (
           <p className="mt-1 text-xs text-muted-foreground">{t('chat.noProvider')}</p>
+        )}
+        {keepAwakeActive && (
+          <div
+            className="mt-2 flex items-center gap-2 rounded-md border border-primary bg-primary/5 px-3 py-1.5 text-xs text-primary"
+            role="status"
+          >
+            <span className="h-2 w-2 animate-pulse rounded-full bg-primary" aria-hidden="true" />
+            <span className="font-medium">{t('keepAwake.banner')}</span>
+          </div>
         )}
         <div className="mt-2 flex flex-wrap items-center gap-2 rounded-md border border-border bg-muted/40 px-2 py-1.5 text-xs">
           <span className="rounded border border-border bg-background px-1.5 py-0.5 font-medium">

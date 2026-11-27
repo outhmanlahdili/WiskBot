@@ -39,6 +39,10 @@ WiskBot does not download browsers at runtime. Only HTTPS hosts you add in Setti
 
 ### Windows desktop control
 
+### Scheduled tasks and keep-awake
+
+While a task runs, WiskBot can hold a Windows power-save blocker so the PC stays active (the screen may still sleep). Settings → Keep awake turns this off to save battery. **A fully sleeping PC runs nothing**: waking a PC requires Windows OS configuration such as wake timers, device wake or Wake-on-LAN, not an AI feature. Test runs perform no write or external actions, and if a data source is unavailable a task reports failure instead of reusing stale data.
+
 Desktop control is Windows-only and disabled until you add exact window titles in Settings → Allowed desktop windows. It uses a fixed Windows UI Automation adapter (`resources/scripts/uia.ps1`) in an isolated utility process; there is no shell tool, no script execution from model input, and password/secret controls are refused. Use **Take over desktop** for sign-in, CAPTCHA or 2FA, and **Stop desktop** to interrupt an action immediately. Element names and window content are untrusted data, not instructions.
 
 Other useful commands:

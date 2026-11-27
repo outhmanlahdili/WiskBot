@@ -23,6 +23,9 @@ import { logger } from './logger'
 import { deleteMemory, listMemories, saveMemory, setMemoryEnabled } from './memory'
 import { getUserDataDir } from './paths'
 import { listSkills, setSkillEnabled } from './skills'
+import { createTaskExecutor } from './tasks/executor'
+import { createTask, deleteTask, listTaskRuns, listTasks, setTaskEnabled, updateTask } from './tasks/service'
+import { TaskScheduler } from './tasks/scheduler'
 import {
   getModelForProvider,
   listProviders,
@@ -174,6 +177,26 @@ const TOOL_DESCRIPTORS: ToolDescriptor[] = [
     approval: 'ask'
   }
 ]
+
+let taskScheduler: TaskScheduler | null = null
+
+function getTaskScheduler(): TaskScheduler {
+  if (!taskScheduler) {
+    const executor = createTaskExecutor({
+      emit: (event) => emitAppEvent({ type: 'chat.event', event })
+    })
+    taskScheduler = new TaskScheduler({
+      now: Date.now,
+      execute: executor.execute,
+      cancelRun: executor.cancel,
+      onEvent: (event) => {
+        emitAppEvent({ type: 'task.event', taskId: event.taskId, event: event.type, data: event })
+      }
+    })
+    taskScheduler.start()
+  }
+  return taskScheduler
+}
 
 let desktopManager: DesktopManager | null = null
 
@@ -410,6 +433,33 @@ export function registerIpcHandlers(): void {
     if (!record) throw new Error('Skill not found.')
     return record
   })
+
+  handle('tasks.list', () => listTasks())
+
+  handle('tasks.create', (payload) => createTask(payload))
+
+  handle('tasks.update', (payload) => {
+    const updated = updateTask(payload)
+    if (!updated) throw new Error('Task not found.')
+    return updated
+  })
+
+  handle('tasks.delete', (payload) => ({ removed: deleteTask(payload.id) }))
+
+  handle('tasks.setEnabled', (payload) => {
+    const updated = setTaskEnabled(payload.id, payload.enabled)
+    if (!updated) throw new Error('Task not found.')
+    return updated
+  })
+
+  handle('tasks.test', async (payload) => {
+    const outcome = await getTaskScheduler().runNow(payload.id, true)
+    return { status: outcome.status, summary: outcome.summary, error: outcome.error }
+  })
+
+  handle('tasks.runs', (payload) => listTaskRuns(payload.taskId, payload.limit))
+
+  handle('tasks.cancel', (payload) => ({ cancelled: getTaskScheduler().cancel(payload.id) }))
 
   handle('desktop.status', () => getDesktopManager().getStatus())
 

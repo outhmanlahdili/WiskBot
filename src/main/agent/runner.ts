@@ -70,6 +70,10 @@ export interface AgentDeps {
   browser?: BrowserControl
   desktop?: DesktopControl
   skillsDir?: string
+  /** Additional system guidance (e.g. task no-data policy). */
+  extraInstructions?: string[]
+  /** Restrict the tools the model may call for this run. */
+  activeTools?: string[]
   emit: (event: ChatEvent) => void
 }
 
@@ -254,14 +258,16 @@ function createAgent(
   run: RunState,
   instructions: string
 ) {
+  const instructionsWithExtras = [...(deps.extraInstructions ?? []), instructions].join(' ')
+
   return new ToolLoopAgent({
     model: deps.model,
-    instructions,
+    instructions: instructionsWithExtras,
     tools,
+    ...(deps.activeTools ? { activeTools: deps.activeTools as Array<keyof typeof tools> } : {}),
     toolCallConcurrency: 1,
     stopWhen: isStepCount(MAX_STEPS),
     experimental_toolApprovalSecret: deps.approvalSecret,
-    activeTools: Object.keys(tools) as Array<keyof typeof tools>,
     prepareStep: ({ messages }) => {
       const estimate = JSON.stringify(messages).length / 4
       if (estimate < COMPACTION_THRESHOLD_CHARS / 4) return {}

@@ -118,7 +118,8 @@ beforeEach(() => {
     allowedFsRoots: [],
     browserDomains: [],
     tone: 'concise',
-    desktopWindowTitles: [TEST_TITLE]
+    desktopWindowTitles: [TEST_TITLE],
+    keepAwakeForTasks: true
   }
   desktop = makeDesktop()
 })

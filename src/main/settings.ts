@@ -10,7 +10,8 @@ export const DEFAULT_SETTINGS: Settings = {
   allowedFsRoots: [],
   browserDomains: [],
   tone: 'concise',
-  desktopWindowTitles: []
+  desktopWindowTitles: [],
+  keepAwakeForTasks: true
 }
 
 let cached: Settings | null = null
@@ -35,7 +36,11 @@ function load(): Settings {
       allowedFsRoots: Array.isArray(stored.allowedFsRoots) ? stored.allowedFsRoots : [],
       browserDomains: Array.isArray(stored.browserDomains) ? stored.browserDomains : [],
       tone: stored.tone ?? DEFAULT_SETTINGS.tone,
-      desktopWindowTitles: Array.isArray(stored.desktopWindowTitles) ? stored.desktopWindowTitles : []
+      desktopWindowTitles: Array.isArray(stored.desktopWindowTitles) ? stored.desktopWindowTitles : [],
+      keepAwakeForTasks:
+        typeof stored.keepAwakeForTasks === 'boolean'
+          ? stored.keepAwakeForTasks
+          : DEFAULT_SETTINGS.keepAwakeForTasks
     })
   } catch (error) {
     logger.warn('settings', 'Stored settings were invalid; defaults were used.', {
@@ -57,7 +62,8 @@ export function updateSettings(patch: Partial<Settings>): Settings {
     allowedFsRoots: patch.allowedFsRoots ?? current.allowedFsRoots,
     browserDomains: patch.browserDomains ?? current.browserDomains,
     tone: patch.tone ?? current.tone,
-    desktopWindowTitles: patch.desktopWindowTitles ?? current.desktopWindowTitles
+    desktopWindowTitles: patch.desktopWindowTitles ?? current.desktopWindowTitles,
+    keepAwakeForTasks: patch.keepAwakeForTasks ?? current.keepAwakeForTasks
   })
 
   ensureUserDataDir()

@@ -91,7 +91,8 @@ beforeEach(() => {
     allowedFsRoots: [],
     browserDomains: [],
     tone: 'concise',
-    desktopWindowTitles: []
+    desktopWindowTitles: [],
+    keepAwakeForTasks: true
   }
 })
 

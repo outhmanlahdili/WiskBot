@@ -284,6 +284,15 @@ export function SettingsView({
     onPermissions({ ...settings.permissionDefaults, [risk]: mode })
   }
 
+  const setKeepAwake = async (keepAwakeForTasks: boolean) => {
+    try {
+      await window.wiskbot.send('settings.update', { keepAwakeForTasks })
+      onRefresh()
+    } catch (error) {
+      onError(String(error))
+    }
+  }
+
   const saveFolders = async (roots: string[]) => {
     try {
       await window.wiskbot.send('settings.update', { allowedFsRoots: roots })
@@ -705,6 +714,24 @@ export function SettingsView({
                 </select>
               </label>
             ))}
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader>
+            <CardTitle>{t('keepAwake.title')}</CardTitle>
+            <CardDescription>{t('keepAwake.help')}</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <label className="flex items-center gap-2 text-sm">
+              <input
+                type="checkbox"
+                checked={settings.keepAwakeForTasks}
+                onChange={(event) => void setKeepAwake(event.target.checked)}
+                aria-label={t('keepAwake.title')}
+              />
+              {t('keepAwake.title')}
+            </label>
           </CardContent>
         </Card>
 

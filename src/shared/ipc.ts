@@ -36,7 +36,9 @@ export const SettingsSchema = z
     /** Assistant tone used in system instructions (Phase 4). */
     tone: z.enum(['concise', 'friendly', 'formal']),
     /** Exact window titles the desktop worker may control (Phase 5). */
-    desktopWindowTitles: z.array(z.string().min(1)).max(32)
+    desktopWindowTitles: z.array(z.string().min(1)).max(32),
+    /** Hold a power-save blocker while tasks run (Phase 6a). */
+    keepAwakeForTasks: z.boolean()
   })
   .strict()
 export type Settings = z.infer<typeof SettingsSchema>
@@ -126,6 +128,39 @@ export const ProviderUpsertSchema = z
     }
   })
 export type ProviderUpsert = z.input<typeof ProviderUpsertSchema>
+
+export const TaskScheduleSchema = z.discriminatedUnion('kind', [
+  z.object({ kind: z.literal('once'), at: z.number().int().min(0) }),
+  z.object({ kind: z.literal('interval'), minutes: z.number().int().min(1).max(60 * 24 * 30) }),
+  z
+    .object({
+      kind: z.literal('cron'),
+      expression: z.string().trim().min(1).max(200),
+      timezone: z.string().trim().min(1).max(100)
+    })
+])
+export type TaskSchedule = z.infer<typeof TaskScheduleSchema>
+
+export const TaskCreateSchema = z
+  .object({
+    prompt: z.string().trim().min(1).max(4000),
+    schedule: TaskScheduleSchema,
+    enabled: z.boolean().default(true)
+  })
+  .strict()
+
+export const TaskUpdateSchema = z
+  .object({
+    id: z.string().min(1),
+    prompt: z.string().trim().min(1).max(4000).optional(),
+    schedule: TaskScheduleSchema.optional(),
+    enabled: z.boolean().optional()
+  })
+  .strict()
+
+export const TaskRunListSchema = z
+  .object({ taskId: z.string().min(1).optional(), limit: z.number().int().min(1).max(200).optional() })
+  .strict()
 
 export const MemoryKindSchema = z.enum(['preference', 'fact', 'instruction', 'imported', 'project'])
 export type MemoryKind = z.infer<typeof MemoryKindSchema>
@@ -256,6 +291,12 @@ export const ChatEventSchema = z.discriminatedUnion('event', [
     message: z.string().optional()
   }),
   z.object({
+    event: z.literal('keep-awake'),
+    conversationId: z.string().optional(),
+    active: z.boolean(),
+    taskId: z.string().optional()
+  }),
+  z.object({
     event: z.literal('desktop-status'),
     conversationId: z.string().optional(),
     status: z.enum(['starting', 'ready', 'busy', 'paused', 'error', 'stopped']),
@@ -319,6 +360,14 @@ export const IpcRequestSchemas = {
   'desktop.takeover': z.object({ active: z.boolean() }).strict(),
   'desktop.stop': z.void(),
   'desktop.restart': z.void(),
+  'tasks.list': z.void(),
+  'tasks.create': TaskCreateSchema,
+  'tasks.update': TaskUpdateSchema,
+  'tasks.delete': IdPayloadSchema,
+  'tasks.setEnabled': z.object({ id: z.string().min(1), enabled: z.boolean() }).strict(),
+  'tasks.test': IdPayloadSchema,
+  'tasks.runs': TaskRunListSchema,
+  'tasks.cancel': IdPayloadSchema,
   'app.deleteLocalData': z.void(),
   'app.resetKeyStore': z.object({ confirmed: z.literal(true) }).strict()
 } as const satisfies Record<string, z.ZodType>
@@ -354,6 +403,27 @@ export interface ProviderTestResult {
   ok: boolean
   message: string
   latencyMs?: number
+}
+
+export interface TaskRecord {
+  id: string
+  /** Schedule kind, stored in the existing `kind` column. */
+  kind: 'once' | 'interval' | 'cron'
+  prompt: string
+  schedule: TaskSchedule
+  enabled: boolean
+  lastRunAt: number | null
+  nextRunAt: number | null
+}
+
+export interface TaskRunRecord {
+  id: string
+  taskId: string
+  startedAt: number
+  finishedAt: number | null
+  status: 'running' | 'success' | 'failed' | 'missed' | 'cancelled'
+  summary: string | null
+  error: string | null
 }
 
 export interface MemoryRecord {
@@ -428,6 +498,14 @@ export interface IpcResultMap {
   'desktop.takeover': { active: boolean }
   'desktop.stop': { stopped: boolean }
   'desktop.restart': { restarted: boolean }
+  'tasks.list': TaskRecord[]
+  'tasks.create': TaskRecord
+  'tasks.update': TaskRecord
+  'tasks.delete': { removed: boolean }
+  'tasks.setEnabled': TaskRecord
+  'tasks.test': { status: string; summary: string; error: string | null }
+  'tasks.runs': TaskRunRecord[]
+  'tasks.cancel': { cancelled: boolean }
   'app.deleteLocalData': { deleted: boolean }
   'app.resetKeyStore': { reset: boolean }
 }

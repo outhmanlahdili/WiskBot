@@ -41,6 +41,29 @@ export function createFakeModel(options: FakeModelOptions): LanguageModel {
     const lower = text.toLowerCase()
     const parts: LanguageModelV4StreamPart[] = [{ type: 'stream-start', warnings: [] }]
 
+    if (lower.includes('slow task')) {
+      parts.push({ type: 'text-start', id: 'txt_slow' })
+      for (let index = 0; index < 30; index++) {
+        parts.push({
+          type: 'text-delta',
+          id: 'txt_slow',
+          delta: `Step ${index} of a slow task. `
+        })
+      }
+      parts.push({ type: 'text-end', id: 'txt_slow' })
+      parts.push({ type: 'finish', usage, finishReason: { unified: 'stop', raw: 'stop' } })
+      return parts
+    }
+
+    if (lower.includes('offline')) {
+      parts.push({
+        type: 'error',
+        error: new Error('Provider unreachable: offline')
+      })
+      parts.push({ type: 'finish', usage, finishReason: { unified: 'error', raw: 'error' } })
+      return parts
+    }
+
     if (
       lower.includes('desktop tree') ||
       lower.includes('desktop click') ||

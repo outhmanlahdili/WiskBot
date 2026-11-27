@@ -133,7 +133,8 @@ beforeEach(() => {
     allowedFsRoots: [root],
     browserDomains: ['127.0.0.1'],
     tone: 'concise',
-    desktopWindowTitles: []
+    desktopWindowTitles: [],
+    keepAwakeForTasks: true
   }
   events = []
   browser = makeBrowser()

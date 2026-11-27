@@ -12,6 +12,7 @@ import type {
 import { AuditView, PlaceholderView } from './components/SimpleViews'
 import { ChatView } from './components/ChatView'
 import { SettingsView } from './components/SettingsView'
+import { TasksView } from './components/TasksView'
 import { Sidebar, type Page } from './components/Sidebar'
 import { applyDocumentLanguage } from './lib/i18n'
 
@@ -175,7 +176,7 @@ export default function App(): React.JSX.Element {
           />
         )}
         {page === 'audit' && <AuditView language={language} events={audit} />}
-        {page === 'tasks' && <PlaceholderView language={language} kind="tasks" />}
+        {page === 'tasks' && <TasksView language={language} onError={setError} />}
         {page === 'skills' && <PlaceholderView language={language} kind="skills" />}
       </main>
     </div>

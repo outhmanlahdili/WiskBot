@@ -35,6 +35,7 @@
     "better-sqlite3": "^13.2.0",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
+    "croner": "^11.0.1",
     "drizzle-orm": "^0.45.4",
     "lucide-react": "^1.80.0",
     "playwright": "^1.65.1",
