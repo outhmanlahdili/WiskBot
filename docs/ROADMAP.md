@@ -92,6 +92,8 @@ Part A: `docs/PROMPTS/06-background-tasks.md` — **COMPLETE 2026-11-28**. Part 
 
 ## Phase 7 — Hardening and distribution
 
+**Readiness audit (2026-11-28):** not ready to release yet. Concrete blockers (stale README, template `electron-builder.yml`, missing MCP security warning, missing privacy statement/notices/changelog, fuses, packaged clean-VM smoke, live provider/local-model gap) are listed in `docs/PROMPTS/07-hardening-and-release.md`.
+
 - [ ] Dependency audit (npm audit), Electron fuses, code-signing path, NSIS installer
 - [ ] Onboarding in 3–4 steps (install → add key/local model → first task → first skill/routine), matching the simple onboarding of AppuBot/DuskBot/Grok Bot
 - [ ] Onboarding and security documentation; privacy policy text; telemetry: none by default

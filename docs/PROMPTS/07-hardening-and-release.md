@@ -10,6 +10,21 @@ Copy everything below the line into Session 2.
 
 Phase 6 is **complete and accepted** (commits `4239ed1`, `ca91046`). All product features are implemented. Phase 7 is the **final** phase: hardening, documentation and distribution preparation. **No new features.** Do not modify `docs/`. Do not publish a release without user approval.
 
+## Concrete blockers found in the 2026-11-28 readiness audit
+
+Fix these first — they are not hypothetical:
+
+1. `README.md` line 5 still says memory, skills, tasks and desktop control are "still planned". They are implemented. Also the "Windows desktop control" heading is empty and appears before the scheduled-tasks heading — fix the order/content.
+2. `electron-builder.yml` still has the template defaults: `appId: com.electron.app`, `productName: wiskbot`, a fake `publish.url` (`https://example.com/auto-updates`), a missing `build/entitlements.mac.plist` reference, and `npmRebuild: false`. Fix app id/product name, remove the fake publish config and unused mac/dmg settings (Windows-first), and verify the native module is bundled correctly.
+3. `SECURITY.md` lacks the required warning that a user-supplied local MCP stdio command runs with app privileges, is disabled by default and is **not sandboxed** (ADR-057). It also does not state that updates are manual.
+4. No `PRIVACY.md` / privacy statement file exists yet — SignPath Foundation's OSS terms expect a published privacy statement.
+5. No `THIRD_PARTY_NOTICES.md` and no `CHANGELOG.md`.
+6. `@electron/fuses` is not applied anywhere.
+7. `npm audit --omit=dev` is clean (0 production vulnerabilities). The 10 moderate findings are dev-only — document that, don't hide it.
+8. No packaged artifact or clean-Windows-VM launch has been verified yet.
+9. No live BYOK provider key and no live Ollama/LM Studio instance have been tested — only fake providers. Document this limitation clearly.
+10. Disk space on the dev machine was critically low during review; keep generated artifacts small and clean caches only when safe.
+
 ## Your task
 
 ### 1. Dependency and licence hygiene
