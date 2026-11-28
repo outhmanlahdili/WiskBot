@@ -62,6 +62,7 @@ Status legend: **accepted** (implement as written) · **proposed** (needs valida
 | ADR-055 | Scheduler rate-limit counters stay in memory | accepted | Same rationale as in-memory approvals; a restart resets counters, which fails closed | If durable limits are needed, persist them with the tasks table |
 | ADR-056 | Phase 6b accepted | accepted | Local profiles without keys, read-only MCP with narrow schemas, config-hash grants, deny-no-execute, 86 tests + typecheck + build pass; no secrets | Never |
 | ADR-057 | User-supplied stdio MCP commands run with app privileges | accepted with explicit warning | Server is disabled by default, added explicitly by the user, no shell string, no downloads; document in `SECURITY.md` during Phase 7 | Revisit if a sandbox for local MCP processes becomes practical |
+| ADR-058 | UI direction: Google Stitch screens, simplicity first, light + dark system-aware | accepted | User decision 2026-11-28. Screens come first; Session 1 extracts `docs/DESIGN.md` from them, then writes a polish-pass prompt for Session 2. No new features in the UI pass | If Stitch output cannot be translated into maintainable tokens, fall back to a hand-written DESIGN.md |
 | ADR-017 | Telemetry disabled by default; no user-data upload | accepted | Local-first and privacy promises | Only with opt-in and a documented policy |
 
 ## Security decisions that must not be relaxed silently
